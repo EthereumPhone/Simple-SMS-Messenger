@@ -82,7 +82,7 @@ class SmsReceiver : BroadcastReceiver() {
 
                     val senderName = context.getNameFromAddress(address, privateCursor)
                     val phoneNumber = PhoneNumber(address, 0, "", address)
-                    val participant = SimpleContact(0, 0, senderName, "", arrayListOf(phoneNumber), ArrayList(), ArrayList())
+                    val participant = SimpleContact(0, 0, senderName, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
                     val participants = arrayListOf(participant)
                     val messageDate = (date / 1000).toInt()
 

@@ -3,6 +3,7 @@ package com.simplemobiletools.smsmessenger.activities
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import com.google.gson.Gson
 import com.reddit.indicatorfastscroll.FastScrollItemIndicator
@@ -56,6 +57,7 @@ class NewConversationActivity : SimpleActivity() {
         new_conversation_address.onTextChangeListener { searchString ->
             val filteredContacts = ArrayList<SimpleContact>()
             allContacts.forEach { contact ->
+                Log.d("Simple-SMS-Messanger", contact.toString())
                 if (contact.phoneNumbers.any { it.normalizedNumber.contains(searchString, true) } ||
                     contact.name.contains(searchString, true) ||
                     contact.name.contains(searchString.normalizeString(), true) ||
@@ -73,7 +75,7 @@ class NewConversationActivity : SimpleActivity() {
         new_conversation_confirm.applyColorFilter(getProperTextColor())
         new_conversation_confirm.setOnClickListener {
             val number = new_conversation_address.value
-            launchThreadActivity(number, number)
+            launchThreadActivity(number, number, "0x0")
         }
 
         no_contacts_placeholder_2.setOnClickListener {
@@ -95,7 +97,7 @@ class NewConversationActivity : SimpleActivity() {
     private fun isThirdPartyIntent(): Boolean {
         if ((intent.action == Intent.ACTION_SENDTO || intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_VIEW) && intent.dataString != null) {
             val number = intent.dataString!!.removePrefix("sms:").removePrefix("smsto:").removePrefix("mms").removePrefix("mmsto:").replace("+", "%2b").trim()
-            launchThreadActivity(URLDecoder.decode(number), "")
+            launchThreadActivity(URLDecoder.decode(number), "", "0x0")
             finish()
             return true
         }
@@ -139,7 +141,7 @@ class NewConversationActivity : SimpleActivity() {
                 if (phoneNumbers.size > 1) {
                     val primaryNumber = contact.phoneNumbers.find { it.isPrimary }
                     if (primaryNumber != null) {
-                        launchThreadActivity(primaryNumber.value, contact.name)
+                        launchThreadActivity(primaryNumber.value, contact.name, contact.ethAddress)
                     } else {
                         val items = ArrayList<RadioItem>()
                         phoneNumbers.forEachIndexed { index, phoneNumber ->
@@ -148,11 +150,11 @@ class NewConversationActivity : SimpleActivity() {
                         }
 
                         RadioGroupDialog(this, items) {
-                            launchThreadActivity(it as String, contact.name)
+                            launchThreadActivity(it as String, contact.name, contact.ethAddress)
                         }
                     }
                 } else {
-                    launchThreadActivity(phoneNumbers.first().normalizedNumber, contact.name)
+                    launchThreadActivity(phoneNumbers.first().normalizedNumber, contact.name, contact.ethAddress)
                 }
             }.apply {
                 contacts_list.adapter = this
@@ -191,7 +193,7 @@ class NewConversationActivity : SimpleActivity() {
                                 SimpleContactsHelper(this@NewConversationActivity).loadContactImage(contact.photoUri, suggested_contact_image, contact.name)
                                 suggestions_holder.addView(this)
                                 setOnClickListener {
-                                    launchThreadActivity(contact.phoneNumbers.first().normalizedNumber, contact.name)
+                                    launchThreadActivity(contact.phoneNumbers.first().normalizedNumber, contact.name, contact.ethAddress)
                                 }
                             }
                         }
@@ -214,7 +216,7 @@ class NewConversationActivity : SimpleActivity() {
         })
     }
 
-    private fun launchThreadActivity(phoneNumber: String, name: String) {
+    private fun launchThreadActivity(phoneNumber: String, name: String, ethAddress: String) {
         hideKeyboard()
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
         val numbers = phoneNumber.split(";").toSet()
@@ -224,6 +226,7 @@ class NewConversationActivity : SimpleActivity() {
             putExtra(THREAD_TITLE, name)
             putExtra(THREAD_TEXT, text)
             putExtra(THREAD_NUMBER, number)
+            putExtra("eth_address", ethAddress)
 
             if (intent.action == Intent.ACTION_SEND && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
                 val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)

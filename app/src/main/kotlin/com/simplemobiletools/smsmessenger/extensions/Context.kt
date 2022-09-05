@@ -108,7 +108,7 @@ fun Context.getMessages(threadId: Long, getImageResolutions: Boolean, dateFrom: 
         val participants = senderNumber.split(getAddressSeparator().toRegex()).map { number ->
             val phoneNumber = PhoneNumber(number, 0, "", number)
             val participantPhoto = getNameAndPhotoFromPhoneNumber(number)
-            SimpleContact(0, 0, participantPhoto.name, photoUri, arrayListOf(phoneNumber), ArrayList(), ArrayList())
+            SimpleContact(0, 0, participantPhoto.name, photoUri, arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
         }
         val isMMS = false
         val message = Message(id, body, type, status, ArrayList(participants), date, read, thread, isMMS, null, senderName, photoUri, subscriptionId)
@@ -412,7 +412,47 @@ fun Context.getThreadParticipants(threadId: Long, contactsMap: HashMap<Int, Simp
                     val name = namePhoto.name
                     val photoUri = namePhoto.photoUri ?: ""
                     val phoneNumber = PhoneNumber(number, 0, "", number)
-                    val contact = SimpleContact(addressId, addressId, name, photoUri, arrayListOf(phoneNumber), ArrayList(), ArrayList())
+                    val contact = SimpleContact(addressId, addressId, name, photoUri, arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
+                    participants.add(contact)
+                }
+            }
+        }
+    } catch (e: Exception) {
+        showErrorToast(e)
+    }
+    return participants
+}
+
+fun Context.getThreadParticipants(threadId: Long, contactsMap: HashMap<Int, SimpleContact>?, ethAddress: String): ArrayList<SimpleContact> {
+    val uri = Uri.parse("${MmsSms.CONTENT_CONVERSATIONS_URI}?simple=true")
+    val projection = arrayOf(
+        ThreadsColumns.RECIPIENT_IDS
+    )
+    val selection = "${Mms._ID} = ?"
+    val selectionArgs = arrayOf(threadId.toString())
+    val participants = ArrayList<SimpleContact>()
+    try {
+        val cursor = contentResolver.query(uri, projection, selection, selectionArgs, null)
+        cursor?.use {
+            if (cursor.moveToFirst()) {
+                val address = cursor.getStringValue(ThreadsColumns.RECIPIENT_IDS)
+                address.split(" ").filter { it.areDigitsOnly() }.forEach {
+                    val addressId = it.toInt()
+                    if (contactsMap?.containsKey(addressId) == true) {
+                        participants.add(contactsMap[addressId]!!)
+                        return@forEach
+                    }
+
+                    val number = getPhoneNumberFromAddressId(addressId)
+                    val namePhoto = getNameAndPhotoFromPhoneNumber(number)
+                    val name = namePhoto.name
+                    val photoUri = namePhoto.photoUri ?: ""
+                    val phoneNumber = PhoneNumber(number, 0, "", number)
+
+                    /**
+                     * Save single ethAddress into contact. In the future also an arraylist, for multiple participants.
+                     */
+                    val contact = SimpleContact(addressId, addressId, name, photoUri, arrayListOf(phoneNumber), ArrayList(), ArrayList(), ethAddress)
                     participants.add(contact)
                 }
             }
@@ -504,7 +544,7 @@ fun Context.getSuggestedContacts(privateContacts: ArrayList<SimpleContact>): Arr
         }
 
         val phoneNumber = PhoneNumber(senderNumber, 0, "", senderNumber)
-        val contact = SimpleContact(0, 0, senderName, photoUri, arrayListOf(phoneNumber), ArrayList(), ArrayList())
+        val contact = SimpleContact(0, 0, senderName, photoUri, arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
         if (!contacts.map { it.phoneNumbers.first().normalizedNumber.trimToComparableNumber() }.contains(senderNumber.trimToComparableNumber())) {
             contacts.add(contact)
         }

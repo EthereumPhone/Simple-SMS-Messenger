@@ -90,6 +90,7 @@ class ThreadActivity : SimpleActivity() {
     private var loadingOlderMessages = false
     private var allMessagesFetched = false
     private var oldestMessageDate = -1
+    private var isEthereum = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -299,7 +300,7 @@ class ThreadActivity : SimpleActivity() {
                 }
 
                 val phoneNumber = PhoneNumber(number, 0, "", number)
-                val contact = SimpleContact(0, 0, name, "", arrayListOf(phoneNumber), ArrayList(), ArrayList())
+                val contact = SimpleContact(0, 0, name, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
                 participants.add(contact)
             }
 
@@ -365,7 +366,7 @@ class ThreadActivity : SimpleActivity() {
         confirm_inserted_number?.setOnClickListener {
             val number = add_contact_or_number.value
             val phoneNumber = PhoneNumber(number, 0, "", number)
-            val contact = SimpleContact(number.hashCode(), number.hashCode(), number, "", arrayListOf(phoneNumber), ArrayList(), ArrayList())
+            val contact = SimpleContact(number.hashCode(), number.hashCode(), number, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
             addSelectedContact(contact)
         }
     }
@@ -502,7 +503,12 @@ class ThreadActivity : SimpleActivity() {
         if (participants.isEmpty()) {
             participants = if (messages.isEmpty()) {
                 val intentNumbers = getPhoneNumbersFromIntent()
-                val participants = getThreadParticipants(threadId, null)
+                val ethAddress = intent.getStringExtra("eth_address") ?: "0x0"
+                val participants = if (ethAddress != "0x0") {
+                    getThreadParticipants(threadId, null, ethAddress)
+                } else {
+                    getThreadParticipants(threadId, null)
+                }
                 fixParticipantNumbers(participants, intentNumbers)
             } else {
                 messages.first().participants
@@ -511,9 +517,15 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupThreadTitle() {
-        val threadTitle = participants.getThreadTitle()
-        if (threadTitle.isNotEmpty()) {
-            thread_toolbar.title = participants.getThreadTitle()
+        if (participants.size == 1 && participants.get(0).ethAddress != "0x0") {
+            print("The address in question: "+participants.get(0).ethAddress)
+            thread_toolbar.title = participants.get(0).name + " - Ethereum"
+            isEthereum = true;
+        } else {
+            val threadTitle = participants.getThreadTitle()
+            if (threadTitle.isNotEmpty()) {
+                thread_toolbar.title = participants.getThreadTitle()
+            }
         }
     }
 
