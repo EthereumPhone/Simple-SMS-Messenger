@@ -57,6 +57,7 @@ import com.simplemobiletools.smsmessenger.receivers.SmsStatusSentReceiver
 import kotlinx.android.synthetic.main.activity_thread.*
 import kotlinx.android.synthetic.main.item_attachment.view.*
 import kotlinx.android.synthetic.main.item_selected_contact.view.*
+import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -91,6 +92,7 @@ class ThreadActivity : SimpleActivity() {
     private var allMessagesFetched = false
     private var oldestMessageDate = -1
     private var isEthereum = false
+    private val xmtpApi by lazy { XMTPApi(this)}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -521,12 +523,17 @@ class ThreadActivity : SimpleActivity() {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
             isEthereum = true;
+
         } else {
             val threadTitle = participants.getThreadTitle()
             if (threadTitle.isNotEmpty()) {
                 thread_toolbar.title = participants.getThreadTitle()
             }
         }
+    }
+
+    private fun setupEthereum(){
+        val xmtpApi = XMTPApi(this)
     }
 
     @SuppressLint("MissingPermission")
