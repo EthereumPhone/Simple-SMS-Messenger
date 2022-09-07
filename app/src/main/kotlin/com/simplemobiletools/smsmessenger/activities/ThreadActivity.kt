@@ -16,6 +16,7 @@ import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.telephony.SubscriptionManager
 import android.text.TextUtils
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -522,7 +523,11 @@ class ThreadActivity : SimpleActivity() {
         if (participants.size == 1 && participants.get(0).ethAddress != "0x0") {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
-            isEthereum = true;
+            isEthereum = true
+            xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
+                Log.d("First message on TEST", s)
+            }
+            //setupEthereum()
 
         } else {
             val threadTitle = participants.getThreadTitle()
