@@ -987,6 +987,14 @@ class ThreadActivity : SimpleActivity() {
         } catch (e: Error) {
             showErrorToast(e.localizedMessage ?: getString(R.string.unknown_error_occurred))
         }
+
+        if(isEthereum){
+            initEthMsg()
+        }
+    }
+
+    private fun initEthMsg(){
+        //get messages and fill them into chat
     }
 
     // show selected contacts, properly split to new lines when appropriate
