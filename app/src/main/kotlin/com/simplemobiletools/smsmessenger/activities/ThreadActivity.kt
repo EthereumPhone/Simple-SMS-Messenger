@@ -524,6 +524,8 @@ class ThreadActivity : SimpleActivity() {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
             isEthereum = true
+
+            //Test message - could be Welcoming Message in the future
             xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
                 Log.d("First message on TEST", s)
             }
@@ -537,9 +539,6 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
-    private fun setupEthereum(){
-        val xmtpApi = XMTPApi(this)
-    }
 
     @SuppressLint("MissingPermission")
     private fun setupSIMSelector() {
@@ -959,6 +958,16 @@ class ThreadActivity : SimpleActivity() {
         try {
             val smsSentIntent = Intent(this, SmsStatusSentReceiver::class.java)
             val deliveredIntent = Intent(this, SmsStatusDeliveredReceiver::class.java)
+
+            //send Message via xmtp
+            val xmptmsg = message.text //text from variable message
+            //participants. participants.get(0).ethAddress
+
+            val target = participants.get(0).ethAddress //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
+
+            xmtpApi.sendMessage(xmptmsg, target).whenComplete { s, throwable ->
+                Log.d("Message", s)
+            }
 
             transaction.setExplicitBroadcastForSentSms(smsSentIntent)
             transaction.setExplicitBroadcastForDeliveredSms(deliveredIntent)
