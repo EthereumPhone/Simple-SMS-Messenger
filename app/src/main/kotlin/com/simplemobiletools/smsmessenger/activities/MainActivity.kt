@@ -30,6 +30,8 @@ import com.simplemobiletools.smsmessenger.helpers.THREAD_ID
 import com.simplemobiletools.smsmessenger.helpers.THREAD_TITLE
 import com.simplemobiletools.smsmessenger.models.Conversation
 import com.simplemobiletools.smsmessenger.models.Events
+import dev.pinkroom.walletconnectkit.WalletConnectKit
+import dev.pinkroom.walletconnectkit.WalletConnectKitConfig
 import kotlinx.android.synthetic.main.activity_main.*
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -43,10 +45,19 @@ class MainActivity : SimpleActivity() {
     private val PICK_IMPORT_SOURCE_INTENT = 11
     private val PICK_EXPORT_FILE_INTENT = 21
 
+
     private var storedTextColor = 0
     private var storedFontSize = 0
     private var bus: EventBus? = null
     private val smsExporter by lazy { MessagesExporter(this) }
+    private val walletconnectconfig = WalletConnectKitConfig(
+        context = this,
+        bridgeUrl = "wss://bridge.aktionariat.com:8887",
+        appUrl = "walletconnectkit.com",
+        appName = "WalletConnectKit",
+        appDescription = "WalletConnectKit is the Swiss Army toolkit for WalletConnect!"
+    )
+    private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
 
     @SuppressLint("InlinedApi")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +65,7 @@ class MainActivity : SimpleActivity() {
         setContentView(R.layout.activity_main)
         appLaunched(BuildConfig.APPLICATION_ID)
         setupOptionsMenu()
+
 
         if (checkAppSideloading()) {
             return
@@ -83,8 +95,19 @@ class MainActivity : SimpleActivity() {
         }
 
         clearAllMessagesIfNeeded()
+        loginView()
     }
 
+    fun loginView(){
+        walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
+    }
+
+    fun onConnected(address:String){
+        //go to main activity
+    }
+    fun onDisconnected(){
+        //exit the app
+    }
     override fun onResume() {
         super.onResume()
         setupToolbar(main_toolbar)

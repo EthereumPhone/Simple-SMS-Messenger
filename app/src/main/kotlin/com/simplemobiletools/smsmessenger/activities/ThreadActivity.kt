@@ -55,9 +55,11 @@ import com.simplemobiletools.smsmessenger.helpers.*
 import com.simplemobiletools.smsmessenger.models.*
 import com.simplemobiletools.smsmessenger.receivers.SmsStatusDeliveredReceiver
 import com.simplemobiletools.smsmessenger.receivers.SmsStatusSentReceiver
+import dev.pinkroom.walletconnectkit.WalletConnectKitConfig
 import kotlinx.android.synthetic.main.activity_thread.*
 import kotlinx.android.synthetic.main.item_attachment.view.*
 import kotlinx.android.synthetic.main.item_selected_contact.view.*
+import org.ethereumphone.xmtp_android_sdk.Signer
 import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -65,6 +67,19 @@ import org.greenrobot.eventbus.ThreadMode
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+
+
+class XMTPSigner : Signer {
+    override fun signMessage(msg: String?): String {
+        TODO("Not yet implemented")
+    }
+
+    override fun getAddress(): String {
+        TODO("Not yet implemented")
+    }
+
+}
+
 
 class ThreadActivity : SimpleActivity() {
     private val MIN_DATE_TIME_DIFF_SECS = 300
@@ -93,7 +108,9 @@ class ThreadActivity : SimpleActivity() {
     private var allMessagesFetched = false
     private var oldestMessageDate = -1
     private var isEthereum = false
-    private val xmtpApi by lazy { XMTPApi(this)}
+
+    private val xmtpApi by lazy { XMTPApi(this, XMTPSigner())}
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -526,9 +543,9 @@ class ThreadActivity : SimpleActivity() {
             isEthereum = true
 
             //Test message - could be Welcoming Message in the future
-            xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
+            /*xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
                 Log.d("First message on TEST", s)
-            }
+            }*/
             //setupEthereum()
 
         } else {
@@ -959,15 +976,18 @@ class ThreadActivity : SimpleActivity() {
             val smsSentIntent = Intent(this, SmsStatusSentReceiver::class.java)
             val deliveredIntent = Intent(this, SmsStatusDeliveredReceiver::class.java)
 
-            //send Message via xmtp
-            val xmptmsg = message.text //text from variable message
-            //participants. participants.get(0).ethAddress
+            if(isEthereum){
+                //send Message via xmtp
+                val xmptmsg = message.text //text from variable message
+                //participants. participants.get(0).ethAddress
 
-            val target = participants.get(0).ethAddress //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
+                val target = participants.get(0).ethAddress //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
 
-            xmtpApi.sendMessage(xmptmsg, target).whenComplete { s, throwable ->
-                Log.d("Message", s)
+                xmtpApi.sendMessage(xmptmsg, target).whenComplete { s, throwable ->
+                    Log.d("Message", s)
+                }
             }
+
 
             transaction.setExplicitBroadcastForSentSms(smsSentIntent)
             transaction.setExplicitBroadcastForDeliveredSms(deliveredIntent)
@@ -992,6 +1012,8 @@ class ThreadActivity : SimpleActivity() {
             initEthMsg()
         }
     }
+
+
 
     private fun initEthMsg(){
         //get messages and fill them into chat
