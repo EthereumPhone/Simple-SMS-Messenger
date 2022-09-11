@@ -25,6 +25,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.RelativeLayout
+import android.widget.Toast
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -55,18 +56,28 @@ import com.simplemobiletools.smsmessenger.helpers.*
 import com.simplemobiletools.smsmessenger.models.*
 import com.simplemobiletools.smsmessenger.receivers.SmsStatusDeliveredReceiver
 import com.simplemobiletools.smsmessenger.receivers.SmsStatusSentReceiver
+import dev.pinkroom.walletconnectkit.WalletConnectButton
+import dev.pinkroom.walletconnectkit.WalletConnectKit
 import dev.pinkroom.walletconnectkit.WalletConnectKitConfig
 import kotlinx.android.synthetic.main.activity_thread.*
 import kotlinx.android.synthetic.main.item_attachment.view.*
 import kotlinx.android.synthetic.main.item_selected_contact.view.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import org.ethereumphone.xmtp_android_sdk.Signer
 import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.walletconnect.Session
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.CompletableFuture
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 
 class XMTPSigner : Signer {
@@ -78,6 +89,37 @@ class XMTPSigner : Signer {
         TODO("Not yet implemented")
     }
 
+}
+
+internal class SignerImpl(var walletConnectKit: WalletConnectKit) : Signer {
+    var hashMap: java.util.HashMap<String, String>
+    override fun signMessage(msg: String): String {
+        hashMap[msg] = ""
+        val completableFuture = CompletableFuture<String>()
+        CompletableFuture.runAsync {
+            GlobalScope.launch(Dispatchers.Main) {
+                val output = walletConnectKit.personalSign(msg).result.toString()
+                hashMap.replace(msg,output)
+            }
+        }
+        while (hashMap[msg] == "") {
+            println("not signed yet")
+            try {
+                Thread.sleep(500)
+            } catch (e: InterruptedException) {
+                e.printStackTrace()
+            }
+        }
+        return hashMap[msg]!!
+    }
+
+    override fun getAddress(): String {
+        return walletConnectKit.address!!
+    }
+
+    init {
+        hashMap = java.util.HashMap()
+    }
 }
 
 
@@ -109,7 +151,16 @@ class ThreadActivity : SimpleActivity() {
     private var oldestMessageDate = -1
     private var isEthereum = false
 
-    private val xmtpApi by lazy { XMTPApi(this, XMTPSigner())}
+    private val walletconnectconfig = WalletConnectKitConfig(
+        context = this,
+        bridgeUrl = "https://bridge.walletconnect.org",
+        appUrl = "https://ethereumphone.org",
+        appName = "ethOS SMS",
+        appDescription = "Send SMS and messages over the XMTP App on ethOS"
+    )
+    private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
+
+    private val xmtpApi by lazy { XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit))}
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -118,12 +169,18 @@ class ThreadActivity : SimpleActivity() {
         setupOptionsMenu()
         refreshMenuItems()
 
+        val walletConnectButton = findViewById<WalletConnectButton>(R.id.walletConnectButtonThread)
+        walletConnectButton.start(walletConnectKit) {
+            walletConnectButton.visibility = View.INVISIBLE
+        }
+
         val extras = intent.extras
         if (extras == null) {
             toast(R.string.unknown_error_occurred)
             finish()
             return
         }
+
 
         clearAllMessagesIfNeeded()
         threadId = intent.getLongExtra(THREAD_ID, 0L)
@@ -147,6 +204,11 @@ class ThreadActivity : SimpleActivity() {
                     }
 
                     setupThread()
+
+                    if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
+                        isEthereum = true
+                        //TODO: The address here is 0x0, find out why
+                    }
                 }
             } else {
                 finish()
@@ -541,6 +603,11 @@ class ThreadActivity : SimpleActivity() {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
             isEthereum = true
+
+            Toast.makeText(this, "Its eth! ID: "+threadId, Toast.LENGTH_LONG).show()
+
+            val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+            sharedPreferences.edit().putBoolean(threadId.toString(), true).apply()
 
             //Test message - could be Welcoming Message in the future
             /*xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->

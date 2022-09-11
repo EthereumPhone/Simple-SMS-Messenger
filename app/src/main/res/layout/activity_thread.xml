@@ -115,6 +115,10 @@
                 android:id="@+id/thread_messages_list"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
+                android:layout_alignParentEnd="true"
+                android:layout_alignParentBottom="true"
+                android:layout_marginEnd="0dp"
+                android:layout_marginBottom="0dp"
                 android:clipToPadding="false"
                 android:overScrollMode="ifContentScrolls"
                 android:scrollbars="none"
@@ -243,4 +247,11 @@
             android:textSize="@dimen/smaller_text_size" />
 
     </RelativeLayout>
+    <dev.pinkroom.walletconnectkit.WalletConnectButton
+        android:id="@+id/walletConnectButtonThread"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="26dp"
+        android:layout_marginTop="593dp"
+        android:layout_marginBottom="26dp" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

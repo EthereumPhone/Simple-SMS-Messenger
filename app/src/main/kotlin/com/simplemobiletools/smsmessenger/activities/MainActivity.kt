@@ -12,6 +12,7 @@ import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Telephony
+import android.view.View
 import android.widget.Toast
 import com.simplemobiletools.commons.dialogs.FilePickerDialog
 import com.simplemobiletools.commons.extensions.*
@@ -52,10 +53,10 @@ class MainActivity : SimpleActivity() {
     private val smsExporter by lazy { MessagesExporter(this) }
     private val walletconnectconfig = WalletConnectKitConfig(
         context = this,
-        bridgeUrl = "wss://bridge.aktionariat.com:8887",
-        appUrl = "walletconnectkit.com",
-        appName = "WalletConnectKit",
-        appDescription = "WalletConnectKit is the Swiss Army toolkit for WalletConnect!"
+        bridgeUrl = "https://bridge.walletconnect.org",
+        appUrl = "https://ethereumphone.org",
+        appName = "ethOS SMS",
+        appDescription = "Send SMS and messages over the XMTP App on ethOS"
     )
     private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
 
@@ -104,9 +105,21 @@ class MainActivity : SimpleActivity() {
 
     fun onConnected(address:String){
         //go to main activity
+        val view = findViewById<View>(R.id.walletConnectButton)
+        view.visibility = View.INVISIBLE
+        val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putBoolean("eth_connected", true)
+        editor.apply();
     }
     fun onDisconnected(){
         //exit the app
+        val view = findViewById<View>(R.id.walletConnectButton)
+        view.visibility = View.VISIBLE
+        val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putBoolean("eth_connected", false)
+        editor.apply();
     }
     override fun onResume() {
         super.onResume()
