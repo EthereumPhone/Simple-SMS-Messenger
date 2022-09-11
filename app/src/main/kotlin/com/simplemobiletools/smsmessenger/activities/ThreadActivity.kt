@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
@@ -47,6 +48,7 @@ import com.simplemobiletools.commons.helpers.*
 import com.simplemobiletools.commons.models.PhoneNumber
 import com.simplemobiletools.commons.models.RadioItem
 import com.simplemobiletools.commons.models.SimpleContact
+import com.simplemobiletools.commons.views.MyButton
 import com.simplemobiletools.commons.views.MyRecyclerView
 import com.simplemobiletools.smsmessenger.R
 import com.simplemobiletools.smsmessenger.adapters.AutoCompleteTextViewAdapter
@@ -65,6 +67,7 @@ import kotlinx.android.synthetic.main.item_selected_contact.view.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.ethereumphone.xmtp_android_sdk.MessageCallback
 import org.ethereumphone.xmtp_android_sdk.Signer
 import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
@@ -80,15 +83,10 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
 
-class XMTPSigner : Signer {
-    override fun signMessage(msg: String?): String {
+class MessageCallbackImpl: MessageCallback {
+    override fun newMessage(from: String?, content: String?) {
         TODO("Not yet implemented")
     }
-
-    override fun getAddress(): String {
-        TODO("Not yet implemented")
-    }
-
 }
 
 internal class SignerImpl(var walletConnectKit: WalletConnectKit) : Signer {
@@ -202,18 +200,26 @@ class ThreadActivity : SimpleActivity() {
                             thread_messages_list.smoothScrollToPosition(index)
                         }
                     }
-
-                    setupThread()
-
                     if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
                         isEthereum = true
-                        //TODO: The address here is 0x0, find out why
+                        val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
+                        if (address != null) {
+                            participants.get(0).ethAddress = address
+                        }
                     }
+
+                    setupThread()
+                    setupListener()
+
                 }
             } else {
                 finish()
             }
         }
+    }
+
+    private fun setupListener() {
+        xmtpApi.listenMessages(participants.get(0).ethAddress, MessageCallbackImpl())
     }
 
     override fun onResume() {
@@ -333,74 +339,99 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupThread() {
-        val privateCursor = getMyContactsCursor(false, true)
-        ensureBackgroundThread {
-            privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
+        if (!isEthereum) {
+            val privateCursor = getMyContactsCursor(false, true)
+            ensureBackgroundThread {
+                privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
 
-            val cachedMessagesCode = messages.clone().hashCode()
-            messages = getMessages(threadId, true)
+                val cachedMessagesCode = messages.clone().hashCode()
+                messages = getMessages(threadId, true)
 
-            val hasParticipantWithoutName = participants.any {
-                it.phoneNumbers.map { it.normalizedNumber }.contains(it.name)
-            }
-
-            try {
-                if (participants.isNotEmpty() && messages.hashCode() == cachedMessagesCode && !hasParticipantWithoutName) {
-                    setupAdapter()
-                    return@ensureBackgroundThread
+                val hasParticipantWithoutName = participants.any {
+                    it.phoneNumbers.map { it.normalizedNumber }.contains(it.name)
                 }
-            } catch (ignored: Exception) {
-            }
 
-            setupParticipants()
+                try {
+                    if (participants.isNotEmpty() && messages.hashCode() == cachedMessagesCode && !hasParticipantWithoutName) {
+                        setupAdapter()
+                        return@ensureBackgroundThread
+                    }
+                } catch (ignored: Exception) {
+                }
 
-            // check if no participant came from a privately stored contact in Simple Contacts
-            if (privateContacts.isNotEmpty()) {
-                val senderNumbersToReplace = HashMap<String, String>()
-                participants.filter { it.doesHavePhoneNumber(it.name) }.forEach { participant ->
-                    privateContacts.firstOrNull { it.doesHavePhoneNumber(participant.phoneNumbers.first().normalizedNumber) }?.apply {
-                        senderNumbersToReplace[participant.phoneNumbers.first().normalizedNumber] = name
-                        participant.name = name
-                        participant.photoUri = photoUri
+                setupParticipants()
+
+                // check if no participant came from a privately stored contact in Simple Contacts
+                if (privateContacts.isNotEmpty()) {
+                    val senderNumbersToReplace = HashMap<String, String>()
+                    participants.filter { it.doesHavePhoneNumber(it.name) }.forEach { participant ->
+                        privateContacts.firstOrNull { it.doesHavePhoneNumber(participant.phoneNumbers.first().normalizedNumber) }?.apply {
+                            senderNumbersToReplace[participant.phoneNumbers.first().normalizedNumber] = name
+                            participant.name = name
+                            participant.photoUri = photoUri
+                        }
+                    }
+
+                    messages.forEach { message ->
+                        if (senderNumbersToReplace.keys.contains(message.senderName)) {
+                            message.senderName = senderNumbersToReplace[message.senderName]!!
+                        }
                     }
                 }
 
-                messages.forEach { message ->
-                    if (senderNumbersToReplace.keys.contains(message.senderName)) {
-                        message.senderName = senderNumbersToReplace[message.senderName]!!
+                if (participants.isEmpty()) {
+                    val name = intent.getStringExtra(THREAD_TITLE) ?: ""
+                    val number = intent.getStringExtra(THREAD_NUMBER)
+                    if (number == null) {
+                        toast(R.string.unknown_error_occurred)
+                        finish()
+                        return@ensureBackgroundThread
                     }
-                }
-            }
 
-            if (participants.isEmpty()) {
-                val name = intent.getStringExtra(THREAD_TITLE) ?: ""
-                val number = intent.getStringExtra(THREAD_NUMBER)
-                if (number == null) {
-                    toast(R.string.unknown_error_occurred)
-                    finish()
-                    return@ensureBackgroundThread
+                    val phoneNumber = PhoneNumber(number, 0, "", number)
+                    val contact = SimpleContact(0, 0, name, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
+                    participants.add(contact)
                 }
 
-                val phoneNumber = PhoneNumber(number, 0, "", number)
-                val contact = SimpleContact(0, 0, name, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
-                participants.add(contact)
-            }
+                messages.chunked(30).forEach { currentMessages ->
+                    messagesDB.insertMessages(*currentMessages.toTypedArray())
+                }
 
-            messages.chunked(30).forEach { currentMessages ->
-                messagesDB.insertMessages(*currentMessages.toTypedArray())
+                setupAttachmentSizes()
+                setupAdapter()
+                runOnUiThread {
+                    setupThreadTitle()
+                    setupSIMSelector()
+                    val sendButton = findViewById<MyButton>(R.id.thread_send_message)
+                    sendButton.text = "SMS"
+                }
             }
-
-            setupAttachmentSizes()
-            setupAdapter()
+        } else {
             runOnUiThread {
                 setupThreadTitle()
-                setupSIMSelector()
+                val sendButton = findViewById<MyButton>(R.id.thread_send_message)
+                sendButton.text = "XMTP"
+                xmtpGetMessages()
             }
+
+
         }
+
+    }
+
+    private fun xmtpGetMessages(): ArrayList<ThreadItem>  {
+        // val message: Message = Message()
+        xmtpApi.getMessages(participants.get(0).ethAddress)
+        return ArrayList()
     }
 
     private fun setupAdapter() {
-        threadItems = getThreadItems()
+
+        if(isEthereum) {
+            threadItems = xmtpGetMessages()
+        } else {
+            threadItems = getThreadItems()
+        }
 
         runOnUiThread {
             refreshMenuItems()
@@ -604,10 +635,13 @@ class ThreadActivity : SimpleActivity() {
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
             isEthereum = true
 
-            Toast.makeText(this, "Its eth! ID: "+threadId, Toast.LENGTH_LONG).show()
+
 
             val sharedPreferences = this.getPreferences(MODE_PRIVATE)
-            sharedPreferences.edit().putBoolean(threadId.toString(), true).apply()
+            val editor = sharedPreferences.edit()
+            editor.putBoolean(threadId.toString(), true)
+            editor.putString(threadId.toString()+"_address", participants.get(0).ethAddress)
+            editor.apply()
 
             //Test message - could be Welcoming Message in the future
             /*xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
@@ -1075,15 +1109,6 @@ class ThreadActivity : SimpleActivity() {
             showErrorToast(e.localizedMessage ?: getString(R.string.unknown_error_occurred))
         }
 
-        if(isEthereum){
-            initEthMsg()
-        }
-    }
-
-
-
-    private fun initEthMsg(){
-        //get messages and fill them into chat
     }
 
     // show selected contacts, properly split to new lines when appropriate

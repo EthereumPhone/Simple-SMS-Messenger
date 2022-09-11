@@ -243,7 +243,6 @@
             android:contentDescription="@string/ok"
             android:drawableTop="@drawable/ic_send_vector"
             android:paddingVertical="@dimen/small_margin"
-            android:text="@string/sms"
             android:textSize="@dimen/smaller_text_size" />
 
     </RelativeLayout>
