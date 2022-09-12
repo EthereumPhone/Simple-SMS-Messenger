@@ -100,7 +100,7 @@ class MainActivity : SimpleActivity() {
     }
 
     fun loginView(){
-        walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
+        walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)//walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
     }
 
     fun onConnected(address:String){
