@@ -67,12 +67,14 @@ import kotlinx.android.synthetic.main.item_selected_contact.view.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.ethereumphone.xmtp_android_sdk.MessageCallback
 import org.ethereumphone.xmtp_android_sdk.Signer
 import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.json.JSONObject
 import org.walletconnect.Session
 import java.io.File
 import java.io.InputStream
@@ -200,6 +202,8 @@ class ThreadActivity : SimpleActivity() {
                             thread_messages_list.smoothScrollToPosition(index)
                         }
                     }
+                    isEthereum = participants.size == 1 && participants.get(0).ethAddress != "0x0"
+
                     if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
                         isEthereum = true
                         val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
@@ -411,7 +415,6 @@ class ThreadActivity : SimpleActivity() {
                 setupThreadTitle()
                 val sendButton = findViewById<MyButton>(R.id.thread_send_message)
                 sendButton.text = "XMTP"
-                xmtpGetMessages()
             }
 
 
@@ -419,10 +422,37 @@ class ThreadActivity : SimpleActivity() {
 
     }
 
-    private fun xmtpGetMessages(): ArrayList<ThreadItem>  {
+    private fun xmtpGetMessages(): ArrayList<ThreadItem> {
         // val message: Message = Message()
-        xmtpApi.getMessages(participants.get(0).ethAddress)
-        return ArrayList()
+        val arraylist = xmtpApi.getMessages(participants.get(0).ethAddress).get()
+        val output = ArrayList<ThreadItem>()
+        arraylist.forEach {
+            val jsonObject = JSONObject(it)
+            val senderAddress = jsonObject.get("senderAddress")
+            val senderName = if (senderAddress == walletConnectKit.address) {
+                "Me"
+            } else {
+                participants.get(0).name
+            }
+            val content = jsonObject.get("content")
+            val message = Message(
+                threadId = threadId,
+                participants = participants,
+                body = content as String,
+                senderName = senderName,
+                attachment = null,
+                date = System.currentTimeMillis().toInt(),
+                id = (jsonObject.get("id") as String).toLong(),
+                isMMS = false,
+                read = true,
+                senderPhotoUri = "",
+                status = 0,
+                subscriptionId = 0,
+                type = 0
+            )
+            output.add(message)
+        }
+        return output
     }
 
     private fun setupAdapter() {
@@ -630,7 +660,7 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupThreadTitle() {
-        if (participants.size == 1 && participants.get(0).ethAddress != "0x0") {
+        if (isEthereum) {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
             isEthereum = true
