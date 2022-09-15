@@ -4,13 +4,13 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
+import android.os.Looper
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Telephony
@@ -26,7 +26,6 @@ import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.RelativeLayout
-import android.widget.Toast
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -67,20 +66,19 @@ import kotlinx.android.synthetic.main.item_selected_contact.view.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import org.ethereumphone.xmtp_android_sdk.MessageCallback
 import org.ethereumphone.xmtp_android_sdk.Signer
 import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import org.walletconnect.Session
+import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.time.Instant
 import java.util.concurrent.CompletableFuture
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 
 
 class MessageCallbackImpl: MessageCallback {
@@ -158,7 +156,7 @@ class ThreadActivity : SimpleActivity() {
     )
     private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
 
-    private val xmtpApi by lazy { XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit))}
+    private var xmtpApi: XMTPApi? = null
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,6 +164,7 @@ class ThreadActivity : SimpleActivity() {
         setContentView(R.layout.activity_thread)
         setupOptionsMenu()
         refreshMenuItems()
+        xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit))
 
         val walletConnectButton = findViewById<WalletConnectButton>(R.id.walletConnectButtonThread)
         walletConnectButton.start(walletConnectKit) {
@@ -200,6 +199,8 @@ class ThreadActivity : SimpleActivity() {
                             thread_messages_list.smoothScrollToPosition(index)
                         }
                     }
+                    isEthereum = participants.size == 1 && participants.get(0).ethAddress != "0x0"
+
                     if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
                         isEthereum = true
                         val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
@@ -219,7 +220,7 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupListener() {
-        xmtpApi.listenMessages(participants.get(0).ethAddress, MessageCallbackImpl())
+        xmtpApi!!.listenMessages(participants.get(0).ethAddress, MessageCallbackImpl())
     }
 
     override fun onResume() {
@@ -411,7 +412,7 @@ class ThreadActivity : SimpleActivity() {
                 setupThreadTitle()
                 val sendButton = findViewById<MyButton>(R.id.thread_send_message)
                 sendButton.text = "XMTP"
-                xmtpGetMessages()
+                setupAdapter()
             }
 
 
@@ -419,10 +420,67 @@ class ThreadActivity : SimpleActivity() {
 
     }
 
-    private fun xmtpGetMessages(): ArrayList<ThreadItem>  {
+    private fun xmtpGetMessages(): ArrayList<ThreadItem> {
         // val message: Message = Message()
-        xmtpApi.getMessages(participants.get(0).ethAddress)
-        return ArrayList()
+        try {
+            Looper.prepare()
+        } catch (e: RuntimeException) {
+            e.printStackTrace()
+        }
+
+        var isDone = false
+        var arrayList = java.util.ArrayList<String>()
+
+        runOnUiThread {
+            xmtpApi!!.getMessages(participants.get(0).ethAddress).whenComplete { arrayListResult, _ ->
+                arrayList = arrayListResult
+                isDone = true;
+            }
+        }
+
+
+
+        while(!isDone) {
+            System.out.println("Trying to get messages")
+            Thread.sleep(100)
+        }
+
+        val output = ArrayList<ThreadItem>()
+        var numberOfChat: Long = 1
+        arrayList.forEach {
+            val jsonObject = JSONObject(it)
+            val senderAddress = jsonObject.get("senderAddress")
+            val senderName = participants.get(0).name
+            val content = jsonObject.get("content") as String
+            val type = if (participants.get(0).ethAddress == senderAddress) {
+                1
+            } else {
+                2
+            }
+            val message = Message(
+                attachment = null,
+                body = content,
+                date = Instant.now().epochSecond.toInt(),
+                id = numberOfChat,
+                isMMS = false,
+                participants = participants,
+                read = false,
+                senderName = senderName,
+                senderPhotoUri = "",
+                status = -1,
+                subscriptionId = -1,
+                threadId = threadId,
+                type = type
+            )
+            message.isReceivedMessage()
+            output.add(message)
+            numberOfChat += 1
+        }
+        try {
+            Looper.loop()
+        } catch (e: Exception){}
+
+        return output
     }
 
     private fun setupAdapter() {
@@ -630,7 +688,7 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupThreadTitle() {
-        if (participants.size == 1 && participants.get(0).ethAddress != "0x0") {
+        if (isEthereum) {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
             isEthereum = true
@@ -1084,7 +1142,7 @@ class ThreadActivity : SimpleActivity() {
 
                 val target = participants.get(0).ethAddress //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
 
-                xmtpApi.sendMessage(xmptmsg, target).whenComplete { s, throwable ->
+                xmtpApi!!.sendMessage(xmptmsg, target).whenComplete { s, throwable ->
                     Log.d("Message", s)
                 }
             }
