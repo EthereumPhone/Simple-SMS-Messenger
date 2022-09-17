@@ -2398,7 +2398,8 @@ async function getMessages(target, msg) {
 
         for (var message of messages) {
             var otherMessage = JSON.parse(JSON.stringify(message))
-            otherMessage["senderAddress"] = utils.computeAddress(message.header.sender.identityKey.secp256k1Uncompressed.bytes)
+            otherMessage["senderAddress"] = message.senderAddress
+            otherMessage["xmtpSenderAddress"] = utils.computeAddress(message.header.sender.identityKey.secp256k1Uncompressed.bytes)
             output.push(otherMessage)
         }
 

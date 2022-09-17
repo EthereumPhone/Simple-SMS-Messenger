@@ -81,12 +81,6 @@ import java.util.concurrent.CompletableFuture
 import java.util.function.BiConsumer
 
 
-class MessageCallbackImpl: MessageCallback {
-    override fun newMessage(from: String?, content: String?) {
-        TODO("Not yet implemented")
-    }
-}
-
 internal class SignerImpl(var walletConnectKit: WalletConnectKit) : Signer {
     var hashMap: java.util.HashMap<String, String>
     override fun signMessage(msg: String): String {
@@ -146,6 +140,8 @@ class ThreadActivity : SimpleActivity() {
     private var allMessagesFetched = false
     private var oldestMessageDate = -1
     private var isEthereum = false
+    private val participantsXMTPAddr = HashMap<String, String>()
+    private var targetEthAddress = ""
 
     private val walletconnectconfig = WalletConnectKitConfig(
         context = this,
@@ -185,17 +181,19 @@ class ThreadActivity : SimpleActivity() {
             }
         }
         if(isEthereum) {
-            val ethAddress = intent.getStringExtra("eth_address")
-            xmtpApi!!.getMessages(ethAddress).whenComplete { p0, p1 ->
+            targetEthAddress = intent.getStringExtra("eth_address").toString()
+            xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
                 Log.d("First message on XMTP", p0?.get(0)!!)
                 val output = ArrayList<ThreadItem>()
                 var numberOfChat: Long = 1
                 p0.forEach {
                     val jsonObject = JSONObject(it)
                     val senderAddress = jsonObject.get("senderAddress")
+                    val xmtpSenderAddress = jsonObject.get("xmtpSenderAddress")
+                    participantsXMTPAddr.put((senderAddress as String).lowercase(), (xmtpSenderAddress as String).lowercase())
                     val senderName = participants.get(0).name
                     val content = jsonObject.get("content") as String
-                    val type = if (ethAddress == senderAddress) {
+                    val type = if (targetEthAddress == senderAddress) {
                         1
                     } else {
                         2
@@ -221,6 +219,10 @@ class ThreadActivity : SimpleActivity() {
                 }
                 setupAdapter(xmtpMessages = output)
             }
+            if (targetEthAddress != null) {
+                setupListener(targetEthAddress, false)
+            }
+
         }
 
 
@@ -264,8 +266,6 @@ class ThreadActivity : SimpleActivity() {
                     }
 
                     setupThread()
-                    //setupListener()
-
                 }
             } else {
                 finish()
@@ -273,9 +273,6 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
-    private fun setupListener() {
-        //xmtpApi!!.listenMessages(participants.get(0).ethAddress, MessageCallbackImpl())
-    }
 
     override fun onResume() {
         super.onResume()
@@ -286,6 +283,38 @@ class ThreadActivity : SimpleActivity() {
             thread_type_message.setText(smsDraft)
         }
         isActivityVisible = true
+    }
+
+    fun setupListener(ethAddress: String, lookup: Boolean) {
+        val xmtpAddr = if(lookup) {
+            participantsXMTPAddr.get(ethAddress.lowercase())
+        } else {
+            ethAddress
+        }
+        xmtpApi!!.listenMessages(xmtpAddr, MessageCallback { from, content ->
+            val type = if (ethAddress == from) {
+                1
+            } else {
+                2
+            }
+            val message = Message(
+                attachment = null,
+                body = content,
+                date = Instant.now().epochSecond.toInt(),
+                id = threadItems.size.toLong()+1,
+                isMMS = false,
+                participants = participants,
+                read = false,
+                senderName = participants.get(0).name,
+                senderPhotoUri = "",
+                status = -1,
+                subscriptionId = -1,
+                threadId = threadId,
+                type = type
+            )
+            threadItems.add(message)
+            setupAdapter(xmtpMessages = threadItems)
+        })
     }
 
     override fun onPause() {
@@ -461,7 +490,11 @@ class ThreadActivity : SimpleActivity() {
                 setupThreadTitle()
                 setupSIMSelector()
                 val sendButton = findViewById<MyButton>(R.id.thread_send_message)
-                sendButton.text = "SMS"
+                if (isEthereum) {
+                    sendButton.text = "XMTP"
+                } else {
+                    sendButton.text = "SMS"
+                }
             }
         }
     }
@@ -1120,29 +1153,51 @@ class ThreadActivity : SimpleActivity() {
 
             if(isEthereum){
                 //send Message via xmtp
-                val xmptmsg = message.text //text from variable message
+                val xmtpmsg = message.text //text from variable message
                 //participants. participants.get(0).ethAddress
 
                 val target = participants.get(0).ethAddress //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
 
-                xmtpApi!!.sendMessage(xmptmsg, target).whenComplete { s, throwable ->
+                xmtpApi!!.sendMessage(xmtpmsg, target).whenComplete { s, throwable ->
                     Log.d("Message", s)
                 }
-            }
+                thread_type_message.setText("")
+                val message = Message(
+                    attachment = null,
+                    body = xmtpmsg,
+                    date = Instant.now().epochSecond.toInt(),
+                    id = threadItems.size.toLong()+1,
+                    isMMS = false,
+                    participants = participants,
+                    read = false,
+                    senderName = "Me",
+                    senderPhotoUri = "",
+                    status = -1,
+                    subscriptionId = -1,
+                    threadId = threadId,
+                    type = 2
+                )
+                threadItems.add(message)
+                setupAdapter(xmtpMessages = threadItems)
+                if (walletConnectKit.address != null) {
+                    runOnUiThread {
+                        setupListener(targetEthAddress, false)
+                    }
+                }
+            } else {
+                transaction.setExplicitBroadcastForSentSms(smsSentIntent)
+                transaction.setExplicitBroadcastForDeliveredSms(deliveredIntent)
 
+                refreshedSinceSent = false
+                transaction.sendNewMessage(message)
+                thread_type_message.setText("")
+                attachmentSelections.clear()
+                thread_attachments_holder.beGone()
+                thread_attachments_wrapper.removeAllViews()
 
-            transaction.setExplicitBroadcastForSentSms(smsSentIntent)
-            transaction.setExplicitBroadcastForDeliveredSms(deliveredIntent)
-
-            refreshedSinceSent = false
-            transaction.sendNewMessage(message)
-            thread_type_message.setText("")
-            attachmentSelections.clear()
-            thread_attachments_holder.beGone()
-            thread_attachments_wrapper.removeAllViews()
-
-            if (!refreshedSinceSent) {
-                refreshMessages()
+                if (!refreshedSinceSent) {
+                    refreshMessages()
+                }
             }
         } catch (e: Exception) {
             showErrorToast(e)
