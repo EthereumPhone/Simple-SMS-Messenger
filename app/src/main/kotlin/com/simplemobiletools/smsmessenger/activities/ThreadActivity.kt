@@ -66,7 +66,6 @@ import kotlinx.android.synthetic.main.item_selected_contact.view.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
 import org.ethereumphone.xmtp_android_sdk.MessageCallback
 import org.ethereumphone.xmtp_android_sdk.Signer
 import org.ethereumphone.xmtp_android_sdk.XMTPApi
@@ -79,6 +78,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
+import java.util.function.BiConsumer
 
 
 class MessageCallbackImpl: MessageCallback {
@@ -164,12 +164,65 @@ class ThreadActivity : SimpleActivity() {
         setContentView(R.layout.activity_thread)
         setupOptionsMenu()
         refreshMenuItems()
-        xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit))
 
         val walletConnectButton = findViewById<WalletConnectButton>(R.id.walletConnectButtonThread)
         walletConnectButton.start(walletConnectKit) {
             walletConnectButton.visibility = View.INVISIBLE
         }
+
+        isEthereum = intent.getBooleanExtra("isEthereum", false)
+
+
+        xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit))
+        // Test: 0x2374eFc48c028C98e259a7bBcba336d6acFF103c
+        //xmtpMessages = xmtpGetMessages("0x2374eFc48c028C98e259a7bBcba336d6acFF103c")
+
+        if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
+            isEthereum = true
+            val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
+            if (address != null) {
+                participants.get(0).ethAddress = address
+            }
+        }
+        if(isEthereum) {
+            val ethAddress = intent.getStringExtra("eth_address")
+            xmtpApi!!.getMessages(ethAddress).whenComplete { p0, p1 ->
+                Log.d("First message on XMTP", p0?.get(0)!!)
+                val output = ArrayList<ThreadItem>()
+                var numberOfChat: Long = 1
+                p0.forEach {
+                    val jsonObject = JSONObject(it)
+                    val senderAddress = jsonObject.get("senderAddress")
+                    val senderName = participants.get(0).name
+                    val content = jsonObject.get("content") as String
+                    val type = if (ethAddress == senderAddress) {
+                        1
+                    } else {
+                        2
+                    }
+                    val message = Message(
+                        attachment = null,
+                        body = content,
+                        date = Instant.now().epochSecond.toInt(),
+                        id = numberOfChat,
+                        isMMS = false,
+                        participants = participants,
+                        read = false,
+                        senderName = senderName,
+                        senderPhotoUri = "",
+                        status = -1,
+                        subscriptionId = -1,
+                        threadId = threadId,
+                        type = type
+                    )
+                    message.isReceivedMessage()
+                    output.add(message)
+                    numberOfChat += 1
+                }
+                setupAdapter(xmtpMessages = output)
+            }
+        }
+
 
         val extras = intent.extras
         if (extras == null) {
@@ -199,6 +252,7 @@ class ThreadActivity : SimpleActivity() {
                             thread_messages_list.smoothScrollToPosition(index)
                         }
                     }
+
                     isEthereum = participants.size == 1 && participants.get(0).ethAddress != "0x0"
 
                     if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
@@ -210,7 +264,7 @@ class ThreadActivity : SimpleActivity() {
                     }
 
                     setupThread()
-                    setupListener()
+                    //setupListener()
 
                 }
             } else {
@@ -220,7 +274,7 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupListener() {
-        xmtpApi!!.listenMessages(participants.get(0).ethAddress, MessageCallbackImpl())
+        //xmtpApi!!.listenMessages(participants.get(0).ethAddress, MessageCallbackImpl())
     }
 
     override fun onResume() {
@@ -323,7 +377,7 @@ class ThreadActivity : SimpleActivity() {
             }
 
             setupParticipants()
-            setupAdapter()
+            setupAdapter(ArrayList())
 
             runOnUiThread {
                 if (messages.isEmpty()) {
@@ -340,153 +394,82 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupThread() {
-        if (!isEthereum) {
-            val privateCursor = getMyContactsCursor(false, true)
-            ensureBackgroundThread {
-                privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
+        val privateCursor = getMyContactsCursor(false, true)
+        ensureBackgroundThread {
+            privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
 
-                val cachedMessagesCode = messages.clone().hashCode()
-                messages = getMessages(threadId, true)
+            val cachedMessagesCode = messages.clone().hashCode()
+            messages = getMessages(threadId, true)
 
-                val hasParticipantWithoutName = participants.any {
-                    it.phoneNumbers.map { it.normalizedNumber }.contains(it.name)
-                }
+            val hasParticipantWithoutName = participants.any {
+                it.phoneNumbers.map { it.normalizedNumber }.contains(it.name)
+            }
 
-                try {
-                    if (participants.isNotEmpty() && messages.hashCode() == cachedMessagesCode && !hasParticipantWithoutName) {
-                        setupAdapter()
-                        return@ensureBackgroundThread
+            try {
+                if (participants.isNotEmpty() && messages.hashCode() == cachedMessagesCode && !hasParticipantWithoutName) {
+                    if (!isEthereum){
+                        setupAdapter(ArrayList())
                     }
-                } catch (ignored: Exception) {
+                    return@ensureBackgroundThread
                 }
+            } catch (ignored: Exception) {
+            }
 
-                setupParticipants()
+            setupParticipants()
 
-                // check if no participant came from a privately stored contact in Simple Contacts
-                if (privateContacts.isNotEmpty()) {
-                    val senderNumbersToReplace = HashMap<String, String>()
-                    participants.filter { it.doesHavePhoneNumber(it.name) }.forEach { participant ->
-                        privateContacts.firstOrNull { it.doesHavePhoneNumber(participant.phoneNumbers.first().normalizedNumber) }?.apply {
-                            senderNumbersToReplace[participant.phoneNumbers.first().normalizedNumber] = name
-                            participant.name = name
-                            participant.photoUri = photoUri
-                        }
-                    }
-
-                    messages.forEach { message ->
-                        if (senderNumbersToReplace.keys.contains(message.senderName)) {
-                            message.senderName = senderNumbersToReplace[message.senderName]!!
-                        }
+            // check if no participant came from a privately stored contact in Simple Contacts
+            if (privateContacts.isNotEmpty()) {
+                val senderNumbersToReplace = HashMap<String, String>()
+                participants.filter { it.doesHavePhoneNumber(it.name) }.forEach { participant ->
+                    privateContacts.firstOrNull { it.doesHavePhoneNumber(participant.phoneNumbers.first().normalizedNumber) }?.apply {
+                        senderNumbersToReplace[participant.phoneNumbers.first().normalizedNumber] = name
+                        participant.name = name
+                        participant.photoUri = photoUri
                     }
                 }
 
-                if (participants.isEmpty()) {
-                    val name = intent.getStringExtra(THREAD_TITLE) ?: ""
-                    val number = intent.getStringExtra(THREAD_NUMBER)
-                    if (number == null) {
-                        toast(R.string.unknown_error_occurred)
-                        finish()
-                        return@ensureBackgroundThread
+                messages.forEach { message ->
+                    if (senderNumbersToReplace.keys.contains(message.senderName)) {
+                        message.senderName = senderNumbersToReplace[message.senderName]!!
                     }
-
-                    val phoneNumber = PhoneNumber(number, 0, "", number)
-                    val contact = SimpleContact(0, 0, name, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
-                    participants.add(contact)
-                }
-
-                messages.chunked(30).forEach { currentMessages ->
-                    messagesDB.insertMessages(*currentMessages.toTypedArray())
-                }
-
-                setupAttachmentSizes()
-                setupAdapter()
-                runOnUiThread {
-                    setupThreadTitle()
-                    setupSIMSelector()
-                    val sendButton = findViewById<MyButton>(R.id.thread_send_message)
-                    sendButton.text = "SMS"
                 }
             }
-        } else {
+
+            if (participants.isEmpty()) {
+                val name = intent.getStringExtra(THREAD_TITLE) ?: ""
+                val number = intent.getStringExtra(THREAD_NUMBER)
+                if (number == null) {
+                    toast(R.string.unknown_error_occurred)
+                    finish()
+                    return@ensureBackgroundThread
+                }
+
+                val phoneNumber = PhoneNumber(number, 0, "", number)
+                val contact = SimpleContact(0, 0, name, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
+                participants.add(contact)
+            }
+
+            messages.chunked(30).forEach { currentMessages ->
+                messagesDB.insertMessages(*currentMessages.toTypedArray())
+            }
+
+            setupAttachmentSizes()
+            if (!isEthereum) {
+                setupAdapter(ArrayList())
+            }
             runOnUiThread {
                 setupThreadTitle()
+                setupSIMSelector()
                 val sendButton = findViewById<MyButton>(R.id.thread_send_message)
-                sendButton.text = "XMTP"
-                setupAdapter()
+                sendButton.text = "SMS"
             }
-
-
         }
-
     }
 
-    private fun xmtpGetMessages(): ArrayList<ThreadItem> {
-        // val message: Message = Message()
-        try {
-            Looper.prepare()
-        } catch (e: RuntimeException) {
-            e.printStackTrace()
-        }
-
-        var isDone = false
-        var arrayList = java.util.ArrayList<String>()
-
-        runOnUiThread {
-            xmtpApi!!.getMessages(participants.get(0).ethAddress).whenComplete { arrayListResult, _ ->
-                arrayList = arrayListResult
-                isDone = true;
-            }
-        }
-
-
-
-        while(!isDone) {
-            System.out.println("Trying to get messages")
-            Thread.sleep(100)
-        }
-
-        val output = ArrayList<ThreadItem>()
-        var numberOfChat: Long = 1
-        arrayList.forEach {
-            val jsonObject = JSONObject(it)
-            val senderAddress = jsonObject.get("senderAddress")
-            val senderName = participants.get(0).name
-            val content = jsonObject.get("content") as String
-            val type = if (participants.get(0).ethAddress == senderAddress) {
-                1
-            } else {
-                2
-            }
-            val message = Message(
-                attachment = null,
-                body = content,
-                date = Instant.now().epochSecond.toInt(),
-                id = numberOfChat,
-                isMMS = false,
-                participants = participants,
-                read = false,
-                senderName = senderName,
-                senderPhotoUri = "",
-                status = -1,
-                subscriptionId = -1,
-                threadId = threadId,
-                type = type
-            )
-            message.isReceivedMessage()
-            output.add(message)
-            numberOfChat += 1
-        }
-        try {
-            Looper.loop()
-        } catch (e: Exception){}
-
-        return output
-    }
-
-    private fun setupAdapter() {
+    private fun setupAdapter(xmtpMessages: ArrayList<ThreadItem>) {
 
         if(isEthereum) {
-            threadItems = xmtpGetMessages()
+            threadItems = xmtpMessages
         } else {
             threadItems = getThreadItems()
         }
@@ -1329,7 +1312,7 @@ class ThreadActivity : SimpleActivity() {
             messagesDB.insertOrIgnore(latestMessage)
         }
 
-        setupAdapter()
+        setupAdapter(ArrayList())
     }
 
     private fun updateMessageType() {
