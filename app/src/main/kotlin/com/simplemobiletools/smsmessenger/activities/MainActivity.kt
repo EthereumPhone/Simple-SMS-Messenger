@@ -14,6 +14,8 @@ import android.os.Bundle
 import android.provider.Telephony
 import android.view.View
 import android.widget.Toast
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.simplemobiletools.commons.dialogs.FilePickerDialog
 import com.simplemobiletools.commons.extensions.*
 import com.simplemobiletools.commons.helpers.*
@@ -25,10 +27,7 @@ import com.simplemobiletools.smsmessenger.adapters.ConversationsAdapter
 import com.simplemobiletools.smsmessenger.dialogs.ExportMessagesDialog
 import com.simplemobiletools.smsmessenger.dialogs.ImportMessagesDialog
 import com.simplemobiletools.smsmessenger.extensions.*
-import com.simplemobiletools.smsmessenger.helpers.EXPORT_MIME_TYPE
-import com.simplemobiletools.smsmessenger.helpers.MessagesExporter
-import com.simplemobiletools.smsmessenger.helpers.THREAD_ID
-import com.simplemobiletools.smsmessenger.helpers.THREAD_TITLE
+import com.simplemobiletools.smsmessenger.helpers.*
 import com.simplemobiletools.smsmessenger.models.Conversation
 import com.simplemobiletools.smsmessenger.models.Events
 import dev.pinkroom.walletconnectkit.WalletConnectKit
@@ -39,7 +38,9 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.time.Instant
 import java.util.*
+import kotlin.collections.ArrayList
 
 class MainActivity : SimpleActivity() {
     private val MAKE_DEFAULT_APP_REQUEST = 1
@@ -225,27 +226,72 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+
     private fun getCachedConversations() {
         ensureBackgroundThread {
-            val conversations = try {
+            val sharedPreferences1 = this.getPreferences(MODE_PRIVATE)
+
+            var conversations = try {
                 conversationsDB.getAll().toMutableList() as ArrayList<Conversation>
             } catch (e: Exception) {
                 ArrayList()
             }
 
-            updateUnreadCountBadge(conversations)
-            runOnUiThread {
-                setupConversations(conversations)
-                getNewConversations(conversations)
+            if (sharedPreferences1.getBoolean("eth_connected", false)) {
+                val gson = Gson()
+                val type = object : TypeToken<ArrayList<Long?>?>() {}.type
+                val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+                val json = sharedPreferences.getString("eth_threads", "")
+                val outputList = ArrayList<Conversation>()
+                try {
+                    if (json != "") {
+                        val ethThreadList = gson.fromJson(json, type) as ArrayList<Long>
+                        ethThreadList.forEach {
+                            outputList.add(
+                                Conversation(
+                                    threadId = it,
+                                    snippet = "",
+                                    date = Instant.now().epochSecond.toInt(),
+                                    read = false,
+                                    title = sharedPreferences.getString(it.toString()+"_title", "") ?: "",
+                                    photoUri = "",
+                                    isGroupConversation = false,
+                                    phoneNumber = ""
+                                )
+                            )
+                        }
+                        conversations.addAll(outputList)
+                    }
+                } catch(e: Exception) {
+                    e.printStackTrace()
+                }
+                updateUnreadCountBadge(conversations)
+                runOnUiThread {
+                    setupConversations(conversations)
+                    getNewConversations(conversations, outputList)
+                }
+            } else {
+                updateUnreadCountBadge(conversations)
+                runOnUiThread {
+                    setupConversations(conversations)
+                    getNewConversations(conversations, null)
+                }
             }
+
+
+
         }
     }
 
-    private fun getNewConversations(cachedConversations: ArrayList<Conversation>) {
+    private fun getNewConversations(cachedConversations: ArrayList<Conversation>, ethConversations: ArrayList<Conversation>?) {
         val privateCursor = getMyContactsCursor(false, true)
         ensureBackgroundThread {
             val privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
             val conversations = getConversations(privateContacts = privateContacts)
+
+            if(ethConversations != null) {
+                conversations.addAll(ethConversations)
+            }
 
             runOnUiThread {
                 setupConversations(conversations)
@@ -302,10 +348,19 @@ class MainActivity : SimpleActivity() {
         if (currAdapter == null) {
             hideKeyboard()
             ConversationsAdapter(this, sortedConversations, conversations_list) {
-                Intent(this, ThreadActivity::class.java).apply {
-                    putExtra(THREAD_ID, (it as Conversation).threadId)
-                    putExtra(THREAD_TITLE, it.title)
-                    startActivity(this)
+                if (this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
+                    Intent(this, ThreadActivity::class.java).apply {
+                        putExtra(THREAD_ID, (it as Conversation).threadId)
+                        putExtra(THREAD_TITLE, it.title)
+                        putExtra("fromMain", true)
+                        startActivity(this)
+                    }
+                } else {
+                    Intent(this, ThreadActivity::class.java).apply {
+                        putExtra(THREAD_ID, (it as Conversation).threadId)
+                        putExtra(THREAD_TITLE, it.title)
+                        startActivity(this)
+                    }
                 }
             }.apply {
                 conversations_list.adapter = this

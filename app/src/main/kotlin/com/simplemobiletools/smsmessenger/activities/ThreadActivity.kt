@@ -4,13 +4,14 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
-import android.os.Looper
+import android.preference.PreferenceManager
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Telephony
@@ -50,6 +51,7 @@ import com.simplemobiletools.commons.models.SimpleContact
 import com.simplemobiletools.commons.views.MyButton
 import com.simplemobiletools.commons.views.MyRecyclerView
 import com.simplemobiletools.smsmessenger.R
+import com.simplemobiletools.smsmessenger.TinyDB
 import com.simplemobiletools.smsmessenger.adapters.AutoCompleteTextViewAdapter
 import com.simplemobiletools.smsmessenger.adapters.ThreadAdapter
 import com.simplemobiletools.smsmessenger.extensions.*
@@ -78,7 +80,6 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
-import java.util.function.BiConsumer
 
 
 internal class SignerImpl(var walletConnectKit: WalletConnectKit) : Signer {
@@ -182,6 +183,9 @@ class ThreadActivity : SimpleActivity() {
         }
         if(isEthereum) {
             targetEthAddress = intent.getStringExtra("eth_address").toString()
+            saveThreadAsEth()
+            val intentNumbers = getPhoneNumbersFromIntent()
+            this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
                 Log.d("First message on XMTP", p0?.get(0)!!)
                 val output = ArrayList<ThreadItem>()
@@ -228,6 +232,7 @@ class ThreadActivity : SimpleActivity() {
 
         val extras = intent.extras
         if (extras == null) {
+            toast("Extra null")
             toast(R.string.unknown_error_occurred)
             finish()
             return
@@ -273,6 +278,32 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
+    private fun saveThreadAsEth() {
+        val gson = Gson()
+        val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+        val json = sharedPreferences.getString("eth_threads", "")
+        if (json != "") {
+            val type = object : TypeToken<ArrayList<Long?>?>() {}.type
+            try {
+                val ethThreadList = gson.fromJson(json, type) as ArrayList<Long>
+                if(!ethThreadList.contains(threadId)) {
+                    ethThreadList.add(threadId)
+                    val editor = sharedPreferences.edit()
+                    editor.putString("eth_threads", gson.toJson(ethThreadList))
+                    editor.apply()
+                }
+            } catch(e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            val ethThreadList = ArrayList<Long>()
+            ethThreadList.add(threadId)
+            val editor = sharedPreferences.edit()
+            editor.putString("eth_threads", gson.toJson(ethThreadList))
+            editor.apply()
+        }
+    }
+
 
     override fun onResume() {
         super.onResume()
@@ -283,6 +314,9 @@ class ThreadActivity : SimpleActivity() {
             thread_type_message.setText(smsDraft)
         }
         isActivityVisible = true
+        if(isEthereum) {
+           loadThreadList()
+        }
     }
 
     fun setupListener(ethAddress: String, lookup: Boolean) {
@@ -292,6 +326,9 @@ class ThreadActivity : SimpleActivity() {
             ethAddress
         }
         xmtpApi!!.listenMessages(xmtpAddr, MessageCallback { from, content ->
+            if ((threadItems.get(threadItems.size.toInt()-1) as Message).body == content) {
+                return@MessageCallback
+            }
             val type = if (ethAddress == from) {
                 1
             } else {
@@ -314,6 +351,7 @@ class ThreadActivity : SimpleActivity() {
             )
             threadItems.add(message)
             setupAdapter(xmtpMessages = threadItems)
+            saveThreadList()
         })
     }
 
@@ -325,15 +363,56 @@ class ThreadActivity : SimpleActivity() {
         } else {
             deleteSmsDraft(threadId)
         }
+        if(!isEthereum) {
+            bus?.post(Events.RefreshMessages())
+        } else {
+            saveThreadList()
+        }
 
-        bus?.post(Events.RefreshMessages())
 
         isActivityVisible = false
+
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        bus?.unregister(this)
+        if (!isEthereum) {
+            bus?.unregister(this)
+        } else {
+            saveThreadList()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if(isEthereum) {
+            saveThreadList()
+        }
+    }
+
+    private fun saveThreadList() {
+        val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        val gson = Gson()
+        val json = gson.toJson(threadItems)
+        editor.putString(threadId.toString()+"_items", json)
+        editor.apply()
+    }
+
+    private fun loadThreadList() {
+        val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+        val gson = Gson()
+        val json = sharedPreferences.getString(threadId.toString()+"_items", "")
+        if (json != "") {
+            val type = object : TypeToken<ArrayList<Message?>?>() {}.type
+            try {
+                threadItems = gson.fromJson(json, type)
+                setupAdapter(xmtpMessages = threadItems)
+            } catch(e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
     }
 
     private fun refreshMenuItems() {
@@ -687,6 +766,13 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupParticipants() {
+        val gson = Gson()
+        val tinyDB = TinyDB(this)
+        if (intent.getBooleanExtra("fromMain", false)) {
+            // From MainActivity
+            val obj = tinyDB.getString(threadId.toString()+"_contact")
+            //participants.add()
+        }
         if (participants.isEmpty()) {
             participants = if (messages.isEmpty()) {
                 val intentNumbers = getPhoneNumbersFromIntent()
@@ -701,6 +787,10 @@ class ThreadActivity : SimpleActivity() {
                 messages.first().participants
             }
         }
+
+        if (isEthereum && !intent.getBooleanExtra("fromMain", false)) {
+           // tinyDB.putObject(participants.get(0))
+        }
     }
 
     private fun setupThreadTitle() {
@@ -711,11 +801,7 @@ class ThreadActivity : SimpleActivity() {
 
 
 
-            val sharedPreferences = this.getPreferences(MODE_PRIVATE)
-            val editor = sharedPreferences.edit()
-            editor.putBoolean(threadId.toString(), true)
-            editor.putString(threadId.toString()+"_address", participants.get(0).ethAddress)
-            editor.apply()
+
 
             //Test message - could be Welcoming Message in the future
             /*xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
@@ -1140,8 +1226,10 @@ class ThreadActivity : SimpleActivity() {
                     val mimeType = contentResolver.getType(selection.uri) ?: continue
                     message.addMedia(byteArray, mimeType)
                 } catch (e: Exception) {
+                    e.printStackTrace()
                     showErrorToast(e)
                 } catch (e: Error) {
+                    e.printStackTrace()
                     showErrorToast(e.localizedMessage ?: getString(R.string.unknown_error_occurred))
                 }
             }
@@ -1200,8 +1288,10 @@ class ThreadActivity : SimpleActivity() {
                 }
             }
         } catch (e: Exception) {
+            e.printStackTrace()
             showErrorToast(e)
         } catch (e: Error) {
+            e.printStackTrace()
             showErrorToast(e.localizedMessage ?: getString(R.string.unknown_error_occurred))
         }
 
