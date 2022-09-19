@@ -3,8 +3,8 @@ package com.simplemobiletools.smsmessenger.activities
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
@@ -183,7 +183,6 @@ class ThreadActivity : SimpleActivity() {
         }
         if(isEthereum) {
             targetEthAddress = intent.getStringExtra("eth_address").toString()
-            saveThreadAsEth()
             val intentNumbers = getPhoneNumbersFromIntent()
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
@@ -301,6 +300,44 @@ class ThreadActivity : SimpleActivity() {
             val editor = sharedPreferences.edit()
             editor.putString("eth_threads", gson.toJson(ethThreadList))
             editor.apply()
+        }
+    }
+
+    private fun setupSaves() {
+        val ethAddress = intent.getStringExtra("eth_address").toString()
+        val sharedPreferences = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putString(threadId.toString()+"_ethAddress", ethAddress)
+        val titleString = thread_toolbar.title.toString()
+        editor.putString(threadId.toString()+"_title", titleString+"- Ethereum")
+        editor.apply()
+    }
+
+    private fun saveEthContact() {
+        val gson = Gson()
+        val sharedPreferences = getSharedPreferences("CONTACT", Context.MODE_PRIVATE)
+
+        try {
+            val editor = sharedPreferences.edit()
+            val json = gson.toJson(participants)
+            val key = threadId.toString()+"_ethContact"
+            editor.putString(key, json)
+            editor.apply()
+        } catch(e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadEthContact() {
+        val gson = Gson()
+        val sharedPreferences = getSharedPreferences("CONTACT", Context.MODE_PRIVATE)
+        val type = object : TypeToken<ArrayList<SimpleContact?>?>() {}.type
+        try {
+            val key = threadId.toString()+"_ethContact"
+            val json = sharedPreferences.getString(key, "")
+            participants = gson.fromJson(json, type)
+        } catch(e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -767,11 +804,9 @@ class ThreadActivity : SimpleActivity() {
 
     private fun setupParticipants() {
         val gson = Gson()
-        val tinyDB = TinyDB(this)
         if (intent.getBooleanExtra("fromMain", false)) {
             // From MainActivity
-            val obj = tinyDB.getString(threadId.toString()+"_contact")
-            //participants.add()
+            loadEthContact()
         }
         if (participants.isEmpty()) {
             participants = if (messages.isEmpty()) {
@@ -789,7 +824,9 @@ class ThreadActivity : SimpleActivity() {
         }
 
         if (isEthereum && !intent.getBooleanExtra("fromMain", false)) {
-           // tinyDB.putObject(participants.get(0))
+            saveEthContact()
+            saveThreadAsEth()
+            setupSaves()
         }
     }
 

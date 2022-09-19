@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
@@ -241,6 +242,7 @@ class MainActivity : SimpleActivity() {
                 val gson = Gson()
                 val type = object : TypeToken<ArrayList<Long?>?>() {}.type
                 val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+                val sharedPreferences2 = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
                 val json = sharedPreferences.getString("eth_threads", "")
                 val outputList = ArrayList<Conversation>()
                 try {
@@ -253,7 +255,7 @@ class MainActivity : SimpleActivity() {
                                     snippet = "",
                                     date = Instant.now().epochSecond.toInt(),
                                     read = false,
-                                    title = sharedPreferences.getString(it.toString()+"_title", "") ?: "",
+                                    title = sharedPreferences2.getString(it.toString()+"_title", "")!!,
                                     photoUri = "",
                                     isGroupConversation = false,
                                     phoneNumber = ""
@@ -328,6 +330,30 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+    private fun launchThreadActivity(name: String, ethAddress: String, threadId: Long) {
+        hideKeyboard()
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        Intent(this, ThreadActivity::class.java).apply {
+            putExtra(THREAD_ID, threadId)
+            putExtra(THREAD_TITLE, name)
+            putExtra(THREAD_TEXT, text)
+            putExtra(THREAD_NUMBER, "")
+            putExtra("fromMain", true)
+            putExtra("isEthereum", true)
+            putExtra("eth_address", ethAddress)
+
+            if (intent.action == Intent.ACTION_SEND && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
+                val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                putExtra(THREAD_ATTACHMENT_URI, uri?.toString())
+            } else if (intent.action == Intent.ACTION_SEND_MULTIPLE && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
+                val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                putExtra(THREAD_ATTACHMENT_URIS, uris)
+            }
+
+            startActivity(this)
+        }
+    }
+
     private fun setupConversations(conversations: ArrayList<Conversation>) {
         val hasConversations = conversations.isNotEmpty()
         val sortedConversations = conversations.sortedWith(
@@ -349,12 +375,20 @@ class MainActivity : SimpleActivity() {
             hideKeyboard()
             ConversationsAdapter(this, sortedConversations, conversations_list) {
                 if (this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
+                    val sharedPreferences = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
+                    launchThreadActivity(
+                        name = (it as Conversation).title,
+                        ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", walletConnectKit.address!!)!!,
+                        threadId = (it as Conversation).threadId
+                    )
+                    /**
                     Intent(this, ThreadActivity::class.java).apply {
                         putExtra(THREAD_ID, (it as Conversation).threadId)
                         putExtra(THREAD_TITLE, it.title)
                         putExtra("fromMain", true)
                         startActivity(this)
                     }
+                    */
                 } else {
                     Intent(this, ThreadActivity::class.java).apply {
                         putExtra(THREAD_ID, (it as Conversation).threadId)
@@ -382,6 +416,7 @@ class MainActivity : SimpleActivity() {
             }
         }
     }
+
 
     private fun launchNewConversation() {
         hideKeyboard()
