@@ -10,6 +10,7 @@
     <string name="mms_file_size_limit_2mb">2MB</string>
     <string name="sms">SMS</string>
     <string name="mms">MMS</string>
+    <string name="XMTP">XMTP</string>
 
     <string name="release_48">
         Disabled delivery reports by default\n
