@@ -26,6 +26,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
+import android.widget.ProgressBar
 import android.widget.RelativeLayout
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
@@ -167,6 +168,8 @@ class ThreadActivity : SimpleActivity() {
             walletConnectButton.visibility = View.INVISIBLE
         }
 
+        val progressBar: ProgressBar = findViewById(R.id.progressBarLoadingXMTP)
+        progressBar.visibility = View.INVISIBLE
         isEthereum = intent.getBooleanExtra("isEthereum", false)
 
 
@@ -185,7 +188,9 @@ class ThreadActivity : SimpleActivity() {
             targetEthAddress = intent.getStringExtra("eth_address").toString()
             val intentNumbers = getPhoneNumbersFromIntent()
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
+            progressBar.visibility = View.VISIBLE
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
+                progressBar.visibility = View.INVISIBLE
                 Log.d("First message on XMTP", p0?.get(0)!!)
                 val output = ArrayList<ThreadItem>()
                 var numberOfChat: Long = 1
@@ -221,6 +226,7 @@ class ThreadActivity : SimpleActivity() {
                     numberOfChat += 1
                 }
                 setupAdapter(xmtpMessages = output)
+                saveThreadList()
             }
             if (targetEthAddress != null) {
                 setupListener(targetEthAddress, false)
@@ -309,8 +315,10 @@ class ThreadActivity : SimpleActivity() {
         val editor = sharedPreferences.edit()
         editor.putString(threadId.toString()+"_ethAddress", ethAddress)
         val titleString = thread_toolbar.title.toString()
-        editor.putString(threadId.toString()+"_title", titleString+"- Ethereum")
+        editor.putString(threadId.toString()+"_title", titleString+" - Ethereum")
         editor.apply()
+        val sendButton = findViewById<MyButton>(R.id.thread_send_message)
+        sendButton.text = "XMTP"
     }
 
     private fun saveEthContact() {
@@ -428,11 +436,14 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun saveThreadList() {
+        // Saving thread
         val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
         val editor = sharedPreferences.edit()
         val gson = Gson()
         val json = gson.toJson(threadItems)
         editor.putString(threadId.toString()+"_items", json)
+        // Saving newest message
+        editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
         editor.apply()
     }
 
@@ -1502,10 +1513,13 @@ class ThreadActivity : SimpleActivity() {
         val text = thread_type_message.text.toString()
         val isGroupMms = participants.size > 1 && config.sendGroupMessageMMS
         val isLongMmsMessage = getNumPages(settings, text) > settings.sendLongAsMmsAfter && config.sendLongMessageMMS
-        val stringId = if (attachmentSelections.isNotEmpty() || isGroupMms || isLongMmsMessage) {
+        var stringId = if (attachmentSelections.isNotEmpty() || isGroupMms || isLongMmsMessage) {
             R.string.mms
         } else {
             R.string.sms
+        }
+        if (isEthereum) {
+            stringId = R.string.XMTP
         }
         thread_send_message.setText(stringId)
     }
