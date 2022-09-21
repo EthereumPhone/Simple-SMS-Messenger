@@ -34,6 +34,7 @@ import com.simplemobiletools.smsmessenger.models.Events
 import dev.pinkroom.walletconnectkit.WalletConnectKit
 import dev.pinkroom.walletconnectkit.WalletConnectKitConfig
 import kotlinx.android.synthetic.main.activity_main.*
+import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -110,8 +111,12 @@ class MainActivity : SimpleActivity() {
         val view = findViewById<View>(R.id.walletConnectButton)
         view.visibility = View.INVISIBLE
         val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+        if (!sharedPreferences.getBoolean("isInitilized", false)) {
+            val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), true)
+        }
         val editor = sharedPreferences.edit()
         editor.putBoolean("eth_connected", true)
+        editor.putBoolean("isInitilized", true)
         editor.apply();
     }
     fun onDisconnected(){
@@ -227,6 +232,20 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+    private fun removeDuplicates(input: ArrayList<Conversation>): ArrayList<Conversation> {
+        if (input.size == 1) {
+            return input
+        }
+        val output = input
+        output.forEach {
+            input.forEach { orIt ->
+                if (it.title.contains("Ethereum") && it.title == orIt.title) {
+                    output.remove(it)
+                }
+            }
+        }
+        return output
+    }
 
     private fun getCachedConversations() {
         ensureBackgroundThread {
@@ -252,9 +271,9 @@ class MainActivity : SimpleActivity() {
                             outputList.add(
                                 Conversation(
                                     threadId = it,
-                                    snippet = "",
+                                    snippet = sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!,
                                     date = Instant.now().epochSecond.toInt(),
-                                    read = false,
+                                    read = true,
                                     title = sharedPreferences2.getString(it.toString()+"_title", "")!!,
                                     photoUri = "",
                                     isGroupConversation = false,
@@ -262,7 +281,7 @@ class MainActivity : SimpleActivity() {
                                 )
                             )
                         }
-                        conversations.addAll(outputList)
+                        conversations.addAll(removeDuplicates(outputList))
                     }
                 } catch(e: Exception) {
                     e.printStackTrace()

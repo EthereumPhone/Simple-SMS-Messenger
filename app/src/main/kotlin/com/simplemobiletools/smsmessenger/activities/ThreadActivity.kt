@@ -84,33 +84,20 @@ import java.util.concurrent.CompletableFuture
 
 
 internal class SignerImpl(var walletConnectKit: WalletConnectKit) : Signer {
-    var hashMap: java.util.HashMap<String, String>
     override fun signMessage(msg: String): String {
-        hashMap[msg] = ""
         val completableFuture = CompletableFuture<String>()
-        CompletableFuture.runAsync {
+        completableFuture.run {
             GlobalScope.launch(Dispatchers.Main) {
                 val output = walletConnectKit.personalSign(msg).result.toString()
-                hashMap.replace(msg,output)
+                completableFuture.complete(output)
             }
         }
-        while (hashMap[msg] == "") {
-            println("not signed yet")
-            try {
-                Thread.sleep(500)
-            } catch (e: InterruptedException) {
-                e.printStackTrace()
-            }
-        }
-        return hashMap[msg]!!
+
+        return completableFuture.get()
     }
 
     override fun getAddress(): String {
         return walletConnectKit.address!!
-    }
-
-    init {
-        hashMap = java.util.HashMap()
     }
 }
 
@@ -173,7 +160,7 @@ class ThreadActivity : SimpleActivity() {
         isEthereum = intent.getBooleanExtra("isEthereum", false)
 
 
-        xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit))
+        xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
         // Test: 0x2374eFc48c028C98e259a7bBcba336d6acFF103c
         //xmtpMessages = xmtpGetMessages("0x2374eFc48c028C98e259a7bBcba336d6acFF103c")
 
@@ -227,6 +214,7 @@ class ThreadActivity : SimpleActivity() {
                 }
                 setupAdapter(xmtpMessages = output)
                 saveThreadList()
+                setupSaves()
             }
             if (targetEthAddress != null) {
                 setupListener(targetEthAddress, false)
@@ -315,7 +303,10 @@ class ThreadActivity : SimpleActivity() {
         val editor = sharedPreferences.edit()
         editor.putString(threadId.toString()+"_ethAddress", ethAddress)
         val titleString = thread_toolbar.title.toString()
-        editor.putString(threadId.toString()+"_title", titleString+" - Ethereum")
+        editor.putString(threadId.toString()+"_title", titleString)
+        if (threadItems.size > 0) {
+            editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
+        }
         editor.apply()
         val sendButton = findViewById<MyButton>(R.id.thread_send_message)
         sendButton.text = "XMTP"
@@ -443,7 +434,9 @@ class ThreadActivity : SimpleActivity() {
         val json = gson.toJson(threadItems)
         editor.putString(threadId.toString()+"_items", json)
         // Saving newest message
-        editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
+        if (threadItems.size > 0) {
+            editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
+        }
         editor.apply()
     }
 
