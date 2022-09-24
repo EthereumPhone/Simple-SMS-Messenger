@@ -53,6 +53,7 @@ import com.simplemobiletools.commons.views.MyButton
 import com.simplemobiletools.commons.views.MyRecyclerView
 import com.simplemobiletools.smsmessenger.R
 import com.simplemobiletools.smsmessenger.TinyDB
+import com.simplemobiletools.smsmessenger.XMTPListenService
 import com.simplemobiletools.smsmessenger.adapters.AutoCompleteTextViewAdapter
 import com.simplemobiletools.smsmessenger.adapters.ThreadAdapter
 import com.simplemobiletools.smsmessenger.extensions.*
@@ -142,6 +143,7 @@ class ThreadActivity : SimpleActivity() {
     private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
 
     private var xmtpApi: XMTPApi? = null
+
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -416,6 +418,8 @@ class ThreadActivity : SimpleActivity() {
             bus?.unregister(this)
         } else {
             saveThreadList()
+            val intent = Intent(this, XMTPListenService::class.java)
+            startService(intent)
         }
     }
 
@@ -423,6 +427,8 @@ class ThreadActivity : SimpleActivity() {
         super.onStop()
         if(isEthereum) {
             saveThreadList()
+            val intent = Intent(this, XMTPListenService::class.java)
+            startService(intent)
         }
     }
 

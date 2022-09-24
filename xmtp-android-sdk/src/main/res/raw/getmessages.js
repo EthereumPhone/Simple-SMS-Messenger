@@ -2349,6 +2349,8 @@ async function getMessages(target, msg) {
 
     var address = await signer.getAddress();
 
+    const hash = "%HASH%"
+
     const getKeyResult = await window.AndroidSigner.getKey()
     if (getKeyResult === "null") {
         const keys = await Client.getKeys(signer)
@@ -2374,7 +2376,7 @@ async function getMessages(target, msg) {
             output.push(otherMessage)
         }
 
-        window.Android.shareMessages(JSON.stringify(output))
+        window.Android.shareMessages(hash, JSON.stringify(output))
 
         
     }

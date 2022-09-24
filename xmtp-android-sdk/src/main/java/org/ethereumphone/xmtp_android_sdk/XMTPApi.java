@@ -2,6 +2,8 @@ package org.ethereumphone.xmtp_android_sdk;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
+import android.view.View;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -172,19 +174,26 @@ public class XMTPApi {
             e.printStackTrace();
         }
 
+        String hash = sha256("getMessages:"+target+":"+System.currentTimeMillis());
+
         StringBuilder output = new StringBuilder();
         output.append("<script type='text/javascript' type='module'>\n");
         output.append(content);
         output.append("</script>\n");
-        String jsOut = output.toString().replace("%target%", target).replace("%WHICH_FUNCTION%", "getMessages");
+        String jsOut = output.toString().replace("%target%", target).replace("%WHICH_FUNCTION%", "getMessages").replace("%HASH%", hash);
         webView.addJavascriptInterface(new DataReceiver(), "Android");
         webView.addJavascriptInterface(new AndroidSigner(), "AndroidSigner");
+
+        // chromium, enable hardware acceleration
+
+
         webView.loadDataWithBaseURL("file:///android_asset/index.html", jsOut, "text/html", "utf-8", null);
-        this.completableFutures.put("getMessages", completableFuture);
+
+        this.completableFutures.put(hash, completableFuture);
         return completableFuture;
     }
 
-    public void listenMessages(String target, MessageCallback messageCallback) {
+    public WebView listenMessages(String target, MessageCallback messageCallback) {
         WebView webView = new WebView(context);
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setAllowFileAccess(true);
@@ -217,6 +226,7 @@ public class XMTPApi {
         webView.addJavascriptInterface(new DataReceiver(), "Android");
         webView.addJavascriptInterface(new AndroidSigner(), "AndroidSigner");
         webView.loadDataWithBaseURL("file:///android_asset/index.html", jsOut, "text/html", "utf-8", null);
+        return webView;
     }
 
     private class DataReceiver {
@@ -238,8 +248,8 @@ public class XMTPApi {
         }
 
         @JavascriptInterface
-        public void shareMessages(String data){
-            if (completableFutures.get("getMessages") != null) {
+        public void shareMessages(String hash, String data){
+            if (completableFutures.get(hash) != null) {
                 ArrayList<String> output = new ArrayList<>();
                 try {
                     JSONArray jsonArray = new JSONArray(data);
@@ -249,8 +259,8 @@ public class XMTPApi {
                 } catch (JSONException e) {
                     e.printStackTrace();
                 }
-                completableFutures.get("getMessages").complete(output);
-                completableFutures.remove("getMessages");
+                completableFutures.get(hash).complete(output);
+                completableFutures.remove(hash);
             }
         }
 

@@ -2,6 +2,7 @@ package com.simplemobiletools.smsmessenger.activities
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -24,6 +25,7 @@ import com.simplemobiletools.commons.models.FAQItem
 import com.simplemobiletools.commons.models.Release
 import com.simplemobiletools.smsmessenger.BuildConfig
 import com.simplemobiletools.smsmessenger.R
+import com.simplemobiletools.smsmessenger.XMTPListenService
 import com.simplemobiletools.smsmessenger.adapters.ConversationsAdapter
 import com.simplemobiletools.smsmessenger.dialogs.ExportMessagesDialog
 import com.simplemobiletools.smsmessenger.dialogs.ImportMessagesDialog
@@ -42,7 +44,6 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import java.time.Instant
 import java.util.*
-import kotlin.collections.ArrayList
 
 class MainActivity : SimpleActivity() {
     private val MAKE_DEFAULT_APP_REQUEST = 1
@@ -62,6 +63,7 @@ class MainActivity : SimpleActivity() {
         appDescription = "Send SMS and messages over the XMTP App on ethOS"
     )
     private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
+
 
     @SuppressLint("InlinedApi")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,6 +115,7 @@ class MainActivity : SimpleActivity() {
         val sharedPreferences = this.getPreferences(MODE_PRIVATE)
         if (!sharedPreferences.getBoolean("isInitilized", false)) {
             val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), true)
+            xmtpApi.getMessages("0x0")
         }
         val editor = sharedPreferences.edit()
         editor.putBoolean("eth_connected", true)
@@ -157,7 +160,16 @@ class MainActivity : SimpleActivity() {
     override fun onDestroy() {
         super.onDestroy()
         bus?.unregister(this)
+        val intent = Intent(this, XMTPListenService::class.java)
+        startService(intent)
     }
+
+    override fun onStop() {
+        super.onStop()
+        val intent = Intent(this, XMTPListenService::class.java)
+        startService(intent)
+    }
+
 
     private fun setupOptionsMenu() {
         main_toolbar.setOnMenuItemClickListener { menuItem ->
@@ -459,6 +471,8 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+
+
     @SuppressLint("NewApi")
     private fun getCreateNewContactShortcut(appIconColor: Int): ShortcutInfo {
         val newEvent = getString(R.string.new_conversation)
@@ -475,6 +489,7 @@ class MainActivity : SimpleActivity() {
             .setIntent(intent)
             .build()
     }
+
 
     private fun launchSearch() {
         hideKeyboard()
