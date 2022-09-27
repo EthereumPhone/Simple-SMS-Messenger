@@ -11,7 +11,7 @@ import android.graphics.drawable.LayerDrawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
-import android.preference.PreferenceManager
+import android.os.StrictMode
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Telephony
@@ -52,7 +52,6 @@ import com.simplemobiletools.commons.models.SimpleContact
 import com.simplemobiletools.commons.views.MyButton
 import com.simplemobiletools.commons.views.MyRecyclerView
 import com.simplemobiletools.smsmessenger.R
-import com.simplemobiletools.smsmessenger.TinyDB
 import com.simplemobiletools.smsmessenger.XMTPListenService
 import com.simplemobiletools.smsmessenger.adapters.AutoCompleteTextViewAdapter
 import com.simplemobiletools.smsmessenger.adapters.ThreadAdapter
@@ -77,6 +76,10 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.json.JSONObject
+import org.web3j.crypto.Keys.toChecksumAddress
+import org.web3j.ens.EnsResolver
+import org.web3j.protocol.Web3j
+import org.web3j.protocol.http.HttpService
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -170,11 +173,12 @@ class ThreadActivity : SimpleActivity() {
             isEthereum = true
             val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
             if (address != null) {
-                participants.get(0).ethAddress = address
+                participants.get(0).ethAddress = checkENSDomain(address)
             }
         }
         if(isEthereum) {
-            targetEthAddress = intent.getStringExtra("eth_address").toString()
+            targetEthAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
+
             val intentNumbers = getPhoneNumbersFromIntent()
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             progressBar.visibility = View.VISIBLE
@@ -273,6 +277,20 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
+    private fun checkENSDomain(input: String): String {
+        if (input.endsWith(".eth")) {
+            val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
+            StrictMode.setThreadPolicy(policy)
+
+            val web3j = Web3j.build(HttpService("https://cloudflare-eth.com/"))
+            val ensResolver = EnsResolver(web3j)
+            val address =  toChecksumAddress(ensResolver.resolve(input))
+            return address
+        } else {
+            return input
+        }
+    }
+
     private fun saveThreadAsEth() {
         val gson = Gson()
         val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
@@ -300,7 +318,7 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupSaves() {
-        val ethAddress = intent.getStringExtra("eth_address").toString()
+        val ethAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
         val sharedPreferences = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
         val editor = sharedPreferences.edit()
         editor.putString(threadId.toString()+"_ethAddress", ethAddress)
@@ -823,7 +841,7 @@ class ThreadActivity : SimpleActivity() {
                 val intentNumbers = getPhoneNumbersFromIntent()
                 val ethAddress = intent.getStringExtra("eth_address") ?: "0x0"
                 val participants = if (ethAddress != "0x0") {
-                    getThreadParticipants(threadId, null, ethAddress)
+                    getThreadParticipants(threadId, null, ethAddress, intent.getStringExtra(THREAD_TITLE) ?: "")
                 } else {
                     getThreadParticipants(threadId, null)
                 }
@@ -845,11 +863,6 @@ class ThreadActivity : SimpleActivity() {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
             isEthereum = true
-
-
-
-
-
             //Test message - could be Welcoming Message in the future
             /*xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
                 Log.d("First message on TEST", s)

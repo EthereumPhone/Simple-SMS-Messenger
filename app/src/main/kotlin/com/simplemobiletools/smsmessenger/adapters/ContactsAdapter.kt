@@ -70,9 +70,13 @@ class ContactsAdapter(
             }
 
             findViewById<TextView>(R.id.item_contact_number).apply {
-                text = TextUtils.join(", ", contact.phoneNumbers.map { it.normalizedNumber })
-                setTextColor(textColor)
-                setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
+                if (contact.phoneNumbers.size == 1 && contact.phoneNumbers.get(0).normalizedNumber == "+1000000000") {
+                    text = contact.ethAddress
+                } else {
+                    text = TextUtils.join(", ", contact.phoneNumbers.map { it.normalizedNumber })
+                    setTextColor(textColor)
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
+                }
             }
 
             SimpleContactsHelper(context).loadContactImage(contact.photoUri, findViewById(R.id.item_contact_image), contact.name)

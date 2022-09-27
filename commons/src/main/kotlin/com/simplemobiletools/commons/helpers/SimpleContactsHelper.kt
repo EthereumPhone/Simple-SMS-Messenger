@@ -30,6 +30,35 @@ import com.simplemobiletools.commons.models.PhoneNumber
 import com.simplemobiletools.commons.models.SimpleContact
 
 class SimpleContactsHelper(val context: Context) {
+    fun filterAllContacts(names: ArrayList<SimpleContact>, allContacts: ArrayList<SimpleContact>): ArrayList<SimpleContact> {
+        names.forEach {
+            if (!containsRawId(allContacts, it.rawId)) {
+                if (it.phoneNumbers.size == 0 && it.ethAddress != "0x0"){
+                    it.phoneNumbers.add(
+                        PhoneNumber(
+                            value = "+1000000000",
+                            type = 2,
+                            label = "",
+                            normalizedNumber = "+1000000000",
+                            isPrimary = false
+                        ))
+                    allContacts.add(it)
+                }
+
+            }
+        }
+        return allContacts
+    }
+
+    fun containsRawId(list: ArrayList<SimpleContact>, rawId: Int) : Boolean {
+        list.forEach {
+            if (it.rawId == rawId) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun getAvailableContacts(favoritesOnly: Boolean, callback: (ArrayList<SimpleContact>) -> Unit) {
         ensureBackgroundThread {
             val names = getContactNames(favoritesOnly)
@@ -54,6 +83,8 @@ class SimpleContactsHelper(val context: Context) {
                     it.photoUri = photoUri
                 }
             }
+
+
 
             allContacts = allContacts.filter { it.name.isNotEmpty() }.distinctBy {
                 val startIndex = Math.max(0, it.phoneNumbers.first().normalizedNumber.length - 9)
@@ -80,6 +111,8 @@ class SimpleContactsHelper(val context: Context) {
                     }
                 }
             }
+
+            allContacts = filterAllContacts(ArrayList(names), allContacts)
 
             contactsToRemove.forEach {
                 allContacts.remove(it)

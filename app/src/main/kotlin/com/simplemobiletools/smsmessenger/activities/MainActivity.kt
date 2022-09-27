@@ -113,9 +113,16 @@ class MainActivity : SimpleActivity() {
         val view = findViewById<View>(R.id.walletConnectButton)
         view.visibility = View.INVISIBLE
         val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+        val xmtp_Key = getSharedPreferences("key", Context.MODE_PRIVATE).getString("key", "null")
         if (!sharedPreferences.getBoolean("isInitilized", false)) {
             val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), true)
-            xmtpApi.getMessages("0x0")
+        }
+        if (xmtp_Key == "null") {
+            println("Trying to get XMTP peeraccounts")
+            val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
+            xmtpApi.peerAccounts.whenComplete { strings, throwable ->
+                println(strings)
+            }
         }
         val editor = sharedPreferences.edit()
         editor.putBoolean("eth_connected", true)
@@ -161,13 +168,13 @@ class MainActivity : SimpleActivity() {
         super.onDestroy()
         bus?.unregister(this)
         val intent = Intent(this, XMTPListenService::class.java)
-        startService(intent)
+        //startService(intent)
     }
 
     override fun onStop() {
         super.onStop()
         val intent = Intent(this, XMTPListenService::class.java)
-        startService(intent)
+        //startService(intent)
     }
 
 
