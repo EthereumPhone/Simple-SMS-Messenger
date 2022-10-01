@@ -44,6 +44,7 @@ import com.klinker.android.send_message.Transaction
 import com.klinker.android.send_message.Utils.getNumPages
 import com.simplemobiletools.commons.dialogs.ConfirmationDialog
 import com.simplemobiletools.commons.dialogs.RadioGroupDialog
+import com.simplemobiletools.commons.dialogs.SendEthDialog
 import com.simplemobiletools.commons.extensions.*
 import com.simplemobiletools.commons.helpers.*
 import com.simplemobiletools.commons.models.PhoneNumber
@@ -114,6 +115,7 @@ class ThreadActivity : SimpleActivity() {
 
     private val TYPE_TAKE_PHOTO = 12
     private val TYPE_CHOOSE_PHOTO = 13
+    private val TYPE_SEND_ETH = 14
 
     private var threadId = 0L
     private var currentSIMCardIndex = 0
@@ -1099,7 +1101,8 @@ class ThreadActivity : SimpleActivity() {
     private fun takeOrPickPhotoVideo() {
         val items = arrayListOf(
             RadioItem(TYPE_TAKE_PHOTO, getString(R.string.take_photo)),
-            RadioItem(TYPE_CHOOSE_PHOTO, getString(R.string.choose_photo))
+            RadioItem(TYPE_CHOOSE_PHOTO, getString(R.string.choose_photo)),
+            RadioItem(TYPE_SEND_ETH, "Send eth")
         )
         RadioGroupDialog(this, items = items) {
             val checkedId = it as Int
@@ -1107,6 +1110,24 @@ class ThreadActivity : SimpleActivity() {
                 launchTakePhotoIntent()
             } else if (checkedId == TYPE_CHOOSE_PHOTO) {
                 launchPickPhotoVideoIntent()
+            } else if (checkedId == TYPE_SEND_ETH) {
+                SendEthDialog(
+                    this
+                ) {
+                    GlobalScope.launch(Dispatchers.IO) {
+                        try {
+                            val response = walletConnectKit.performTransaction(
+                                address = checkENSDomain(participants.get(0).ethAddress),
+                                value = it
+                            )
+                            // TODO: Show transaction in chat
+                        } catch(t: Throwable) {
+                            t.printStackTrace()
+                            toast("Failed to send transaction.")
+                        }
+
+                    }
+                }
             }
         }
     }
