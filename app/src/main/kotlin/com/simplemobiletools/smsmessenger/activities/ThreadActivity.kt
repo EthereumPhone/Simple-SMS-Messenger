@@ -183,12 +183,15 @@ class ThreadActivity : SimpleActivity() {
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             progressBar.visibility = View.VISIBLE
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
-                progressBar.visibility = View.INVISIBLE
                 Log.d("First message on XMTP", p0?.get(0)!!)
                 val output = ArrayList<ThreadItem>()
                 var numberOfChat: Long = 1
                 p0.forEach {
+                    println("The message ->$it<-")
                     val jsonObject = JSONObject(it)
+                    if (jsonObject.has("error")) {
+                        return@forEach
+                    }
                     val senderAddress = jsonObject.get("senderAddress")
                     val xmtpSenderAddress = jsonObject.get("xmtpSenderAddress")
                     participantsXMTPAddr.put((senderAddress as String).lowercase(), (xmtpSenderAddress as String).lowercase())
@@ -214,13 +217,13 @@ class ThreadActivity : SimpleActivity() {
                         threadId = threadId,
                         type = type
                     )
-                    message.isReceivedMessage()
                     output.add(message)
                     numberOfChat += 1
                 }
                 setupAdapter(xmtpMessages = output)
                 saveThreadList()
                 setupSaves()
+                progressBar.visibility = View.INVISIBLE
             }
             if (targetEthAddress != null) {
                 setupListener(targetEthAddress, false)
@@ -259,7 +262,7 @@ class ThreadActivity : SimpleActivity() {
                         }
                     }
 
-                    isEthereum = participants.size == 1 && participants.get(0).ethAddress != "0x0"
+                    isEthereum = participants.size == 1 && checkENSDomain(participants.get(0).ethAddress) != "0x0"
 
                     if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
                         isEthereum = true
@@ -283,9 +286,14 @@ class ThreadActivity : SimpleActivity() {
             StrictMode.setThreadPolicy(policy)
 
             val web3j = Web3j.build(HttpService("https://cloudflare-eth.com/"))
-            val ensResolver = EnsResolver(web3j)
-            val address =  toChecksumAddress(ensResolver.resolve(input))
-            return address
+            val ensResolver = ENSResolver(web3j)
+            return try {
+                val address = toChecksumAddress(ensResolver.resolve(input))
+                address
+            } catch (e: Exception) {
+                e.printStackTrace()
+                input
+            }
         } else {
             return input
         }
@@ -381,7 +389,8 @@ class ThreadActivity : SimpleActivity() {
         } else {
             ethAddress
         }
-        xmtpApi!!.listenMessages(xmtpAddr, MessageCallback { from, content ->
+        xmtpApi!!.listenMessages(checkENSDomain(xmtpAddr!!), MessageCallback { from, content ->
+            println("New message from $from: $content")
             if ((threadItems.get(threadItems.size.toInt()-1) as Message).body == content) {
                 return@MessageCallback
             }
@@ -394,7 +403,7 @@ class ThreadActivity : SimpleActivity() {
                 attachment = null,
                 body = content,
                 date = Instant.now().epochSecond.toInt(),
-                id = threadItems.size.toLong()+1,
+                id = threadItems.size.toLong(),
                 isMMS = false,
                 participants = participants,
                 read = false,
@@ -408,6 +417,7 @@ class ThreadActivity : SimpleActivity() {
             threadItems.add(message)
             setupAdapter(xmtpMessages = threadItems)
             saveThreadList()
+            setupSaves()
         })
     }
 
@@ -645,10 +655,8 @@ class ThreadActivity : SimpleActivity() {
 
     private fun setupAdapter(xmtpMessages: ArrayList<ThreadItem>) {
 
-        if(isEthereum) {
+        if (xmtpMessages.size > 0) {
             threadItems = xmtpMessages
-        } else {
-            threadItems = getThreadItems()
         }
 
         runOnUiThread {
@@ -1304,7 +1312,7 @@ class ThreadActivity : SimpleActivity() {
                 val xmtpmsg = message.text //text from variable message
                 //participants. participants.get(0).ethAddress
 
-                val target = participants.get(0).ethAddress //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
+                val target = checkENSDomain(participants.get(0).ethAddress) //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
 
                 xmtpApi!!.sendMessage(xmtpmsg, target).whenComplete { s, throwable ->
                     Log.d("Message", s)
