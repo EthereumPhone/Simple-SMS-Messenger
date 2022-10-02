@@ -5,7 +5,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.graphics.*
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.media.MediaMetadataRetriever
@@ -78,9 +78,9 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.json.JSONObject
 import org.web3j.crypto.Keys.toChecksumAddress
-import org.web3j.ens.EnsResolver
 import org.web3j.protocol.Web3j
 import org.web3j.protocol.http.HttpService
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -138,6 +138,8 @@ class ThreadActivity : SimpleActivity() {
     private val participantsXMTPAddr = HashMap<String, String>()
     private var targetEthAddress = ""
 
+    private val allImageUris = ArrayList<Uri>()
+
     private val walletconnectconfig = WalletConnectKitConfig(
         context = this,
         bridgeUrl = "https://bridge.walletconnect.org",
@@ -189,7 +191,6 @@ class ThreadActivity : SimpleActivity() {
                 val output = ArrayList<ThreadItem>()
                 var numberOfChat: Long = 1
                 p0.forEach {
-                    println("The message ->$it<-")
                     val jsonObject = JSONObject(it)
                     if (jsonObject.has("error")) {
                         return@forEach
@@ -199,6 +200,14 @@ class ThreadActivity : SimpleActivity() {
                     participantsXMTPAddr.put((senderAddress as String).lowercase(), (xmtpSenderAddress as String).lowercase())
                     val senderName = participants.get(0).name
                     val content = jsonObject.get("content") as String
+                    if (content.contains("tx_msg")) {
+                        val realContent = content.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
+                        val jsonObject = JSONObject(realContent)
+                        val msg = createMsgImageFromText("${jsonObject.getString("value")} eth", this, numberOfChat)
+                        output.add(msg)
+                        numberOfChat += 1
+                        return@forEach
+                    }
                     val type = if (targetEthAddress == senderAddress) {
                         1
                     } else {
@@ -456,6 +465,13 @@ class ThreadActivity : SimpleActivity() {
     override fun onStop() {
         super.onStop()
         if(isEthereum) {
+            allImageUris.forEach {
+                try {
+                    getPathFromURI(it)?.let { it1 -> File(it1).delete() }
+                } catch(e: android.database.CursorIndexOutOfBoundsException) {
+                    e.printStackTrace()
+                }
+            }
             saveThreadList()
             val intent = Intent(this, XMTPListenService::class.java)
             startService(intent)
@@ -1114,13 +1130,29 @@ class ThreadActivity : SimpleActivity() {
                 SendEthDialog(
                     this
                 ) {
+                    val context: Context = this
                     GlobalScope.launch(Dispatchers.IO) {
                         try {
                             val response = walletConnectKit.performTransaction(
                                 address = checkENSDomain(participants.get(0).ethAddress),
                                 value = it
                             )
-                            // TODO: Show transaction in chat
+                            val msg = createMsgImageFromText("$it eth", context, threadItems.size.toLong()+1)
+                            val jsonObject = JSONObject()
+                            jsonObject.put("txId", response.result.toString())
+                            jsonObject.put("value", it)
+
+
+                            val xmtpmsg = "<tx_msg>$jsonObject</tx_msg>"
+
+                            val target = checkENSDomain(participants.get(0).ethAddress) //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
+                            runOnUiThread {
+                                xmtpApi!!.sendMessage(xmtpmsg, target).whenComplete { s, throwable ->
+                                    Log.d("Message", s)
+                                }
+                                threadItems.add(msg)
+                                setupAdapter(xmtpMessages = threadItems)
+                            }
                         } catch(t: Throwable) {
                             t.printStackTrace()
                             toast("Failed to send transaction.")
@@ -1145,6 +1177,55 @@ class ThreadActivity : SimpleActivity() {
         } catch (e: Exception) {
             showErrorToast(e)
         }
+    }
+
+    private fun createMsgImageFromText(text: String, context: Context, messageId: Long): Message {
+        val bitmap: Bitmap = Bitmap.createBitmap(1000, 1000, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val textPaint = Paint()
+        textPaint.setTextAlign(Paint.Align.CENTER)
+        textPaint.setColor(Color.WHITE)
+        textPaint.textSize = 120.toFloat()
+
+        val xPos = canvas.width / 2
+        val yPos = (canvas.height / 2 - (textPaint.descent() + textPaint.ascent()) / 2)
+
+        canvas.drawText(text, xPos.toFloat(), yPos, textPaint)
+        val uri = getImageUri(context, bitmap)
+
+        allImageUris.add(uri!!)
+
+        val attachmentArray = ArrayList<Attachment>()
+        attachmentArray.add(
+            Attachment(
+                id = null,
+                messageId = messageId,
+                uriString = uri.toString(),
+                mimetype = "image/png",
+                width = canvas.width,
+                height = canvas.height,
+                filename = "transaction"
+            )
+        )
+        return Message(
+            attachment = MessageAttachment(
+                id = messageId,
+                text = "",
+                attachments = attachmentArray
+            ),
+            body = "",
+            date = Instant.now().epochSecond.toInt(),
+            id = messageId,
+            isMMS = false,
+            participants = participants,
+            read = false,
+            senderName = "Me",
+            senderPhotoUri = "",
+            status = -1,
+            subscriptionId = -1,
+            threadId = threadId,
+            type = 2
+        )
     }
 
     private fun launchPickPhotoVideoIntent() {
@@ -1240,6 +1321,13 @@ class ThreadActivity : SimpleActivity() {
             .into(attachmentView.thread_attachment_preview)
     }
 
+    fun getImageUri(inContext: Context, inImage: Bitmap): Uri? {
+        val bytes = ByteArrayOutputStream()
+        inImage.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+        val path = MediaStore.Images.Media.insertImage(inContext.contentResolver, inImage, "Title", null)
+        return Uri.parse(path)
+    }
+
     private fun removeAttachment(attachmentView: View, originalUri: String) {
         thread_attachments_wrapper.removeView(attachmentView)
         attachmentSelections.remove(originalUri)
@@ -1247,6 +1335,16 @@ class ThreadActivity : SimpleActivity() {
             thread_attachments_holder.beGone()
         }
         checkSendMessageAvailability()
+    }
+
+    fun getPathFromURI(uri: Uri?): String? {
+        val projection = arrayOf(MediaStore.Images.Media.DATA)
+        val cursor = contentResolver.query(uri!!, projection, null, null, null) ?: return null
+        val column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+        cursor.moveToFirst()
+        val s = cursor.getString(column_index)
+        cursor.close()
+        return s
     }
 
     private fun saveAttachment(resultData: Intent) {

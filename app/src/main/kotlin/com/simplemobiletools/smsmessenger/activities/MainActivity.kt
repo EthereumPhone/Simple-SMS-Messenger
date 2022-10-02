@@ -40,6 +40,7 @@ import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.json.JSONObject
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.time.Instant
@@ -287,10 +288,17 @@ class MainActivity : SimpleActivity() {
                     if (json != "") {
                         val ethThreadList = gson.fromJson(json, type) as ArrayList<Long>
                         ethThreadList.forEach {
+                            val snippet = if (sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!.contains("<tx_msg>")) {
+                                val realContent = sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
+                                val jsonObject = JSONObject(realContent)
+                                "${jsonObject.getString("value")} eth"
+                            } else {
+                                sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!
+                            }
                             outputList.add(
                                 Conversation(
                                     threadId = it,
-                                    snippet = sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!,
+                                    snippet = snippet,
                                     date = Instant.now().epochSecond.toInt(),
                                     read = true,
                                     title = sharedPreferences2.getString(it.toString()+"_title", "")!!,

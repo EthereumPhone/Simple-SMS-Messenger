@@ -18,6 +18,7 @@ import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
@@ -106,7 +107,7 @@ public class XMTPApi {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
+        message = Base64.getEncoder().encodeToString(message.getBytes());
         StringBuilder output = new StringBuilder();
         output.append("<script type='text/javascript' type='module'>\n");
         output.append(content);

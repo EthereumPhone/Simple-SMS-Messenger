@@ -2381,8 +2381,8 @@ async function getMessages(target, msg) {
         
     }
     if (WHAT === "sendMessage") {
-            // Send a message
-        const receipt = await conversation.send(msg)
+        // Send a message
+        const receipt = await conversation.send(atob(msg))
         if (window.Android) {
             window.Android.sentMessage("%hash%")
         }
