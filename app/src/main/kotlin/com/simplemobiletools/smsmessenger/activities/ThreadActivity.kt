@@ -182,6 +182,10 @@ class ThreadActivity : SimpleActivity() {
         }
         if(isEthereum) {
             targetEthAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
+            if (intent.getBooleanExtra("fromNewConvo", false)) {
+                val contact = SimpleContact(0, 0, targetEthAddress, "", ArrayList(), ArrayList(), ArrayList(), targetEthAddress)
+                participants.add(contact)
+            }
 
             val intentNumbers = getPhoneNumbersFromIntent()
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
@@ -203,7 +207,7 @@ class ThreadActivity : SimpleActivity() {
                     if (content.contains("tx_msg")) {
                         val realContent = content.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
                         val jsonObject = JSONObject(realContent)
-                        val msg = createMsgImageFromText("${jsonObject.getString("value")} eth", this, numberOfChat)
+                        val msg = createMsgImageFromText("${jsonObject.getString("value")} eth", this, numberOfChat, targetEthAddress != senderAddress)
                         output.add(msg)
                         numberOfChat += 1
                         return@forEach
@@ -1137,7 +1141,7 @@ class ThreadActivity : SimpleActivity() {
                                 address = checkENSDomain(participants.get(0).ethAddress),
                                 value = it
                             )
-                            val msg = createMsgImageFromText("$it eth", context, threadItems.size.toLong()+1)
+                            val msg = createMsgImageFromText("$it eth", context, threadItems.size.toLong()+1, false)
                             val jsonObject = JSONObject()
                             jsonObject.put("txId", response.result.toString())
                             jsonObject.put("value", it)
@@ -1179,7 +1183,7 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
-    private fun createMsgImageFromText(text: String, context: Context, messageId: Long): Message {
+    private fun createMsgImageFromText(text: String, context: Context, messageId: Long, received: Boolean): Message {
         val bitmap: Bitmap = Bitmap.createBitmap(1000, 1000, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val textPaint = Paint()
@@ -1224,7 +1228,11 @@ class ThreadActivity : SimpleActivity() {
             status = -1,
             subscriptionId = -1,
             threadId = threadId,
-            type = 2
+            type = if (!received) {
+                2
+            } else {
+                1
+            }
         )
     }
 

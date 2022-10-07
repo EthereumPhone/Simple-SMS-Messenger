@@ -9,6 +9,11 @@
         android:title="@string/search"
         app:showAsAction="always" />
     <item
+        android:id="@+id/showXMTPConvs"
+        android:icon="@drawable/ic_search_vector"
+        android:title="@string/show_incoming_xmtp_conversations"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/import_messages"
         android:showAsAction="never"
         android:title="@string/import_messages"

@@ -3,6 +3,7 @@ package org.ethereumphone.xmtp_android_sdk;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.util.Log;
 import android.view.View;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
@@ -12,6 +13,7 @@ import android.webkit.WebView;
 import java.io.IOException;
 import java.io.InputStream;
 
+import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -194,6 +196,44 @@ public class XMTPApi {
         return completableFuture;
     }
 
+    public CompletableFuture<ArrayList<String>> getAllConversations() {
+        WebView webView = new WebView(context);
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setAllowFileAccess(true);
+        webView.getSettings().setDomStorageEnabled(true); // Turn on DOM storage
+        webView.getSettings().setAppCacheEnabled(true); //Enable H5 (APPCache) caching
+        webView.getSettings().setDatabaseEnabled(true);
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+                android.util.Log.d("WebView", consoleMessage.message());
+                return true;
+            }
+        });
+
+        CompletableFuture<ArrayList<String>> completableFuture = new CompletableFuture<>();
+        String content = "";
+        try {
+            content = getAssetContent(this.context.getResources().openRawResource(R.raw.getconversations));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+        StringBuilder output = new StringBuilder();
+        output.append("<script type='text/javascript' type='module'>\n");
+        output.append(content);
+        output.append("</script>\n");
+        String jsOut = output.toString();
+        webView.addJavascriptInterface(new DataReceiver(), "Android");
+        webView.addJavascriptInterface(new AndroidSigner(), "AndroidSigner");
+
+        webView.loadDataWithBaseURL("file:///android_asset/index.html", jsOut, "text/html", "utf-8", null);
+
+        this.completableFutures.put("getAllConversations", completableFuture);
+        return completableFuture;
+    }
+
     public WebView listenMessages(String target, MessageCallback messageCallback) {
         WebView webView = new WebView(context);
         webView.getSettings().setJavaScriptEnabled(true);
@@ -305,6 +345,21 @@ public class XMTPApi {
             String result = sharedPreferences.getString("key", "null");
             return result;
         }
+
+        @JavascriptInterface
+        public void allConvos(String data) {
+            ArrayList<String> output = new ArrayList<>();
+            try {
+                JSONArray jsonArray = new JSONArray(data);
+                for(int i = 0; i<jsonArray.length();i++){
+                    output.add(jsonArray.getString(i));
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            completableFutures.get("getAllConversations").complete(output);
+            completableFutures.remove("getAllConversations");
+        }
     }
 
     public static String sha256(final String base) {
@@ -312,9 +367,9 @@ public class XMTPApi {
             final MessageDigest digest = MessageDigest.getInstance("SHA-256");
             final byte[] hash = digest.digest(base.getBytes("UTF-8"));
             final StringBuilder hexString = new StringBuilder();
-            for (int i = 0; i < hash.length; i++) {
-                final String hex = Integer.toHexString(0xff & hash[i]);
-                if(hex.length() == 1)
+            for (byte b : hash) {
+                final String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1)
                     hexString.append('0');
                 hexString.append(hex);
             }

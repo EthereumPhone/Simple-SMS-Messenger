@@ -43,6 +43,7 @@ import kotlinx.android.synthetic.main.activity_main.main_coordinator
 import kotlinx.android.synthetic.main.activity_main.no_conversations_placeholder
 import kotlinx.android.synthetic.main.activity_main.no_conversations_placeholder_2
 import kotlinx.android.synthetic.main.activity_main.walletConnectButton
+import kotlinx.android.synthetic.main.activity_show_request_convos.*
 import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -52,8 +53,9 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import java.time.Instant
 import java.util.*
+import kotlin.collections.ArrayList
 
-class MainActivity : SimpleActivity() {
+class ShowRequestConvosActivity : SimpleActivity() {
     private val MAKE_DEFAULT_APP_REQUEST = 1
     private val PICK_IMPORT_SOURCE_INTENT = 11
     private val PICK_EXPORT_FILE_INTENT = 21
@@ -76,37 +78,7 @@ class MainActivity : SimpleActivity() {
     @SuppressLint("InlinedApi")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        appLaunched(BuildConfig.APPLICATION_ID)
-        setupOptionsMenu()
-
-
-        if (checkAppSideloading()) {
-            return
-        }
-
-        if (isQPlus()) {
-            val roleManager = getSystemService(RoleManager::class.java)
-            if (roleManager!!.isRoleAvailable(RoleManager.ROLE_SMS)) {
-                if (roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
-                    askPermissions()
-                } else {
-                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
-                    startActivityForResult(intent, MAKE_DEFAULT_APP_REQUEST)
-                }
-            } else {
-                toast(R.string.unknown_error_occurred)
-                finish()
-            }
-        } else {
-            if (Telephony.Sms.getDefaultSmsPackage(this) == packageName) {
-                askPermissions()
-            } else {
-                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
-                intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
-                startActivityForResult(intent, MAKE_DEFAULT_APP_REQUEST)
-            }
-        }
+        setContentView(R.layout.activity_show_request_convos)
 
         clearAllMessagesIfNeeded()
         loginView()
@@ -126,26 +98,16 @@ class MainActivity : SimpleActivity() {
         walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
     }
 
-    fun onConnected(address:String){
+    fun onConnected(address:String) {
         //go to main activity
         val view = findViewById<View>(R.id.walletConnectButton)
         view.visibility = View.INVISIBLE
-        val sharedPreferences = this.getPreferences(MODE_PRIVATE)
-        val xmtp_Key = getSharedPreferences("key", Context.MODE_PRIVATE).getString("key", "null")
-        if (!sharedPreferences.getBoolean("isInitilized", false)) {
-            val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), true)
+        val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
+        xmtpApi.allConversations.whenComplete { strings, throwable ->
+            progressBar.visibility = View.INVISIBLE
+            initMessenger(strings)
         }
-        if (xmtp_Key == "null") {
-            println("Trying to get XMTP peeraccounts")
-            val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
-            xmtpApi.peerAccounts.whenComplete { strings, throwable ->
-                println(strings)
-            }
-        }
-        val editor = sharedPreferences.edit()
-        editor.putBoolean("eth_connected", true)
-        editor.putBoolean("isInitilized", true)
-        editor.apply();
+
     }
     fun onDisconnected(){
         //exit the app
@@ -158,7 +120,6 @@ class MainActivity : SimpleActivity() {
     }
     override fun onResume() {
         super.onResume()
-        setupToolbar(main_toolbar)
         if (storedTextColor != getProperTextColor()) {
             (conversations_list.adapter as? ConversationsAdapter)?.updateTextColor(getProperTextColor())
         }
@@ -204,23 +165,17 @@ class MainActivity : SimpleActivity() {
                 R.id.export_messages -> tryToExportMessages()
                 R.id.import_messages -> tryImportMessages()
                 R.id.about -> launchAbout()
-                R.id.showXMTPConvs -> launchShowXMTPConvos()
                 else -> return@setOnMenuItemClickListener false
             }
             return@setOnMenuItemClickListener true
         }
     }
 
-    private fun launchShowXMTPConvos() {
-        val intent = Intent(this, ShowRequestConvosActivity::class.java)
-        startActivity(intent)
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         super.onActivityResult(requestCode, resultCode, resultData)
         if (requestCode == MAKE_DEFAULT_APP_REQUEST) {
             if (resultCode == Activity.RESULT_OK) {
-                askPermissions()
+                walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
             } else {
                 finish()
             }
@@ -237,34 +192,12 @@ class MainActivity : SimpleActivity() {
         storedFontSize = config.fontSize
     }
 
-    // while SEND_SMS and READ_SMS permissions are mandatory, READ_CONTACTS is optional. If we don't have it, we just won't be able to show the contact name in some cases
-    private fun askPermissions() {
-        handlePermission(PERMISSION_READ_SMS) {
-            if (it) {
-                handlePermission(PERMISSION_SEND_SMS) {
-                    if (it) {
-                        handlePermission(PERMISSION_READ_CONTACTS) {
-                            initMessenger()
-                            bus = EventBus.getDefault()
-                            try {
-                                bus!!.register(this)
-                            } catch (e: Exception) {
-                            }
-                        }
-                    } else {
-                        finish()
-                    }
-                }
-            } else {
-                finish()
-            }
-        }
-    }
 
-    private fun initMessenger() {
+
+    private fun initMessenger(strings: ArrayList<String>) {
         checkWhatsNewDialog()
         storeStateVariables()
-        getCachedConversations()
+        getCachedConversations(strings)
 
         no_conversations_placeholder_2.setOnClickListener {
             launchNewConversation()
@@ -290,64 +223,41 @@ class MainActivity : SimpleActivity() {
         return output
     }
 
-    private fun getCachedConversations() {
+    private fun getCachedConversations(strings: ArrayList<String>) {
         ensureBackgroundThread {
-            val sharedPreferences1 = this.getPreferences(MODE_PRIVATE)
 
-            var conversations = try {
-                conversationsDB.getAll().toMutableList() as ArrayList<Conversation>
-            } catch (e: Exception) {
-                ArrayList()
+            val conversations = ArrayList<Conversation>()
+
+
+            val outputList = ArrayList<Conversation>()
+            try {
+                strings.forEach {
+                    val jsonObject = JSONObject(it)
+                    val snippet = jsonObject.getString("newestMessage")
+                    val random = Random()
+                    outputList.add(
+                        Conversation(
+                            threadId = random.nextInt(1000000).toLong(),
+                            snippet = snippet,
+                            date = jsonObject.getInt("whenSent"),
+                            read = true,
+                            title = jsonObject.getString("convAddr"),
+                            photoUri = "",
+                            isGroupConversation = false,
+                            phoneNumber = ""
+                        )
+                    )
+                }
+                conversations.addAll(removeDuplicates(outputList))
+            } catch(e: Exception) {
+                e.printStackTrace()
             }
 
-            if (sharedPreferences1.getBoolean("eth_connected", false)) {
-                val gson = Gson()
-                val type = object : TypeToken<ArrayList<Long?>?>() {}.type
-                val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
-                val sharedPreferences2 = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
-                val json = sharedPreferences.getString("eth_threads", "")
-                val outputList = ArrayList<Conversation>()
-                try {
-                    if (json != "") {
-                        val ethThreadList = gson.fromJson(json, type) as ArrayList<Long>
-                        ethThreadList.forEach {
-                            val snippet = if (sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!.contains("<tx_msg>")) {
-                                val realContent = sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
-                                val jsonObject = JSONObject(realContent)
-                                "${jsonObject.getString("value")} eth"
-                            } else {
-                                sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!
-                            }
-                            outputList.add(
-                                Conversation(
-                                    threadId = it,
-                                    snippet = snippet,
-                                    date = Instant.now().epochSecond.toInt(),
-                                    read = true,
-                                    title = sharedPreferences2.getString(it.toString()+"_title", "")!!,
-                                    photoUri = "",
-                                    isGroupConversation = false,
-                                    phoneNumber = ""
-                                )
-                            )
-                        }
-                        conversations.addAll(removeDuplicates(outputList))
-                    }
-                } catch(e: Exception) {
-                    e.printStackTrace()
-                }
-                updateUnreadCountBadge(conversations)
-                runOnUiThread {
-                    setupConversations(conversations)
-                    getNewConversations(conversations, outputList)
-                }
-            } else {
-                updateUnreadCountBadge(conversations)
-                runOnUiThread {
-                    setupConversations(conversations)
-                    getNewConversations(conversations, null)
-                }
+            runOnUiThread {
+                setupConversations(conversations)
+                getNewConversations(conversations, outputList)
             }
+
 
 
 
@@ -410,6 +320,7 @@ class MainActivity : SimpleActivity() {
             putExtra("fromMain", true)
             putExtra("isEthereum", true)
             putExtra("eth_address", ethAddress)
+            putExtra("fromNewConvo", true)
 
             if (intent.action == Intent.ACTION_SEND && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
                 val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
@@ -444,20 +355,28 @@ class MainActivity : SimpleActivity() {
             hideKeyboard()
             ConversationsAdapter(this, sortedConversations, conversations_list) {
                 if (this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
-                    val sharedPreferences = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
+                    val sharedPreferences = getSharedPreferences("ETHADDR", MODE_PRIVATE)
                     launchThreadActivity(
                         name = (it as Conversation).title,
-                        ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", walletConnectKit.address!!)!!,
+                        ethAddress = (it as Conversation).title,
                         threadId = (it as Conversation).threadId
                     )
                     /**
                     Intent(this, ThreadActivity::class.java).apply {
-                        putExtra(THREAD_ID, (it as Conversation).threadId)
-                        putExtra(THREAD_TITLE, it.title)
-                        putExtra("fromMain", true)
-                        startActivity(this)
+                    putExtra(THREAD_ID, (it as Conversation).threadId)
+                    putExtra(THREAD_TITLE, it.title)
+                    putExtra("fromMain", true)
+                    startActivity(this)
                     }
-                    */
+                     */
+                    /**
+                    Intent(this, ThreadActivity::class.java).apply {
+                    putExtra(THREAD_ID, (it as Conversation).threadId)
+                    putExtra(THREAD_TITLE, it.title)
+                    putExtra("fromMain", true)
+                    startActivity(this)
+                    }
+                     */
                 } else {
                     Intent(this, ThreadActivity::class.java).apply {
                         putExtra(THREAD_ID, (it as Conversation).threadId)
@@ -654,12 +573,6 @@ class MainActivity : SimpleActivity() {
             else -> toast(R.string.invalid_file_format)
         }
     }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun refreshMessages(event: Events.RefreshMessages) {
-        initMessenger()
-    }
-
     private fun checkWhatsNewDialog() {
         arrayListOf<Release>().apply {
             add(Release(48, R.string.release_48))
