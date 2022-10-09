@@ -85,16 +85,6 @@ class ShowRequestConvosActivity : SimpleActivity() {
     }
 
     fun loginView(){
-        if (!this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
-            ConfirmationDialog(
-                activity = this,
-                message = "For XMTP Messaging to work, please click the WalletConnect Button",
-                negative = 0,
-                positive = R.string.confirm
-            ) {
-                println("Confirmed")
-            }
-        }
         walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
     }
 
@@ -316,7 +306,7 @@ class ShowRequestConvosActivity : SimpleActivity() {
             putExtra(THREAD_ID, threadId)
             putExtra(THREAD_TITLE, name)
             putExtra(THREAD_TEXT, text)
-            putExtra(THREAD_NUMBER, "")
+            putExtra(THREAD_NUMBER, "+1000000000")
             putExtra("fromMain", true)
             putExtra("isEthereum", true)
             putExtra("eth_address", ethAddress)
@@ -354,36 +344,11 @@ class ShowRequestConvosActivity : SimpleActivity() {
         if (currAdapter == null) {
             hideKeyboard()
             ConversationsAdapter(this, sortedConversations, conversations_list) {
-                if (this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
-                    val sharedPreferences = getSharedPreferences("ETHADDR", MODE_PRIVATE)
-                    launchThreadActivity(
-                        name = (it as Conversation).title,
-                        ethAddress = (it as Conversation).title,
-                        threadId = (it as Conversation).threadId
-                    )
-                    /**
-                    Intent(this, ThreadActivity::class.java).apply {
-                    putExtra(THREAD_ID, (it as Conversation).threadId)
-                    putExtra(THREAD_TITLE, it.title)
-                    putExtra("fromMain", true)
-                    startActivity(this)
-                    }
-                     */
-                    /**
-                    Intent(this, ThreadActivity::class.java).apply {
-                    putExtra(THREAD_ID, (it as Conversation).threadId)
-                    putExtra(THREAD_TITLE, it.title)
-                    putExtra("fromMain", true)
-                    startActivity(this)
-                    }
-                     */
-                } else {
-                    Intent(this, ThreadActivity::class.java).apply {
-                        putExtra(THREAD_ID, (it as Conversation).threadId)
-                        putExtra(THREAD_TITLE, it.title)
-                        startActivity(this)
-                    }
-                }
+                launchThreadActivity(
+                    name = (it as Conversation).title,
+                    ethAddress = (it as Conversation).title,
+                    threadId = (it as Conversation).threadId
+                )
             }.apply {
                 conversations_list.adapter = this
             }
