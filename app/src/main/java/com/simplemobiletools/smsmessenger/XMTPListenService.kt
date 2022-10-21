@@ -77,7 +77,7 @@ class XMTPListenService : Service() {
             startForeground(0, builder.build())
 
 
-            xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
+            xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
             val type = object : TypeToken<ArrayList<Long?>?>() {}.type
             val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
             val json = sharedPreferences.getString("eth_threads", "")

@@ -28,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.ProgressBar
 import android.widget.RelativeLayout
+import androidx.core.content.ContextCompat.getSystemService
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -88,22 +89,33 @@ import java.time.Instant
 import java.util.concurrent.CompletableFuture
 
 
-internal class SignerImpl(var walletConnectKit: WalletConnectKit) : Signer {
-    override fun signMessage(msg: String): String {
-        val completableFuture = CompletableFuture<String>()
-        completableFuture.run {
-            GlobalScope.launch(Dispatchers.Main) {
-                val output = walletConnectKit.personalSign(msg).result.toString()
-                completableFuture.complete(output)
-            }
-        }
+internal class SignerImpl(context: Context) : Signer {
+    val cls = Class.forName("android.os.WalletProxy")
+    val createSession = cls.declaredMethods[1]
+    val getUserDecision = cls.declaredMethods[3]
+    val hasBeenFulfilled = cls.declaredMethods[4]
+    val signMessageSys = cls.declaredMethods[6]
+    val getAddress = cls.declaredMethods[2]
+    val service = context.getSystemService("wallet")
+    val session = createSession.invoke(service) as String
 
-        return completableFuture.get()
+    override fun signMessage(msg: String): String {
+        val requestID = signMessageSys.invoke(service, session, msg) as String
+
+        while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
+        val output = hasBeenFulfilled.invoke(service, requestID) as String
+
+        return output
     }
 
     override fun getAddress(): String {
-        return walletConnectKit.address!!
+        val requestID = getAddress.invoke(service, session) as String
+        while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
+        val address = hasBeenFulfilled.invoke(service, requestID) as String
+        return address
     }
+
+
 }
 
 
@@ -169,7 +181,7 @@ class ThreadActivity : SimpleActivity() {
         isEthereum = intent.getBooleanExtra("isEthereum", false)
 
 
-        xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
+        xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
         // Test: 0x2374eFc48c028C98e259a7bBcba336d6acFF103c
         //xmtpMessages = xmtpGetMessages("0x2374eFc48c028C98e259a7bBcba336d6acFF103c")
 

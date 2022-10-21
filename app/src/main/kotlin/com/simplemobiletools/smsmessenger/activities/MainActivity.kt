@@ -113,7 +113,18 @@ class MainActivity : SimpleActivity() {
     }
 
     fun loginView(){
-        if (!this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
+        if (this.getSystemService("wallet") != null) {
+            walletConnectButton.visibility = View.INVISIBLE
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this), true)
+            xmtpApi.peerAccounts.whenComplete { strings, throwable ->
+                println(strings)
+            }
+            val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+            val editor = sharedPreferences.edit()
+            editor.putBoolean("eth_connected", true)
+            editor.putBoolean("isInitilized", true)
+            editor.apply();
+        } else if (!this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
             ConfirmationDialog(
                 activity = this,
                 message = "For XMTP Messaging to work, please click the WalletConnect Button",
@@ -133,11 +144,11 @@ class MainActivity : SimpleActivity() {
         val sharedPreferences = this.getPreferences(MODE_PRIVATE)
         val xmtp_Key = getSharedPreferences("key", Context.MODE_PRIVATE).getString("key", "null")
         if (!sharedPreferences.getBoolean("isInitilized", false)) {
-            val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), true)
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this), true)
         }
         if (xmtp_Key == "null") {
             println("Trying to get XMTP peeraccounts")
-            val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
             xmtpApi.peerAccounts.whenComplete { strings, throwable ->
                 println(strings)
             }
