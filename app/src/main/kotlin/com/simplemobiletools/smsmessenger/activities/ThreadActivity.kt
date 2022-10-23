@@ -102,14 +102,23 @@ internal class SignerImpl(context: Context) : Signer {
     override fun signMessage(msg: String): String {
         val requestID = signMessageSys.invoke(service, session, msg) as String
 
-        while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
-        val output = hasBeenFulfilled.invoke(service, requestID) as String
+        Thread.sleep(1000)
 
-        return output
+        while(true) {
+            val output = hasBeenFulfilled.invoke(service, requestID)
+            if (output != null && output != "notfulfilled") {
+                break;
+            }
+        }
+
+        return hasBeenFulfilled.invoke(service, requestID) as String
     }
 
     override fun getAddress(): String {
         val requestID = getAddress.invoke(service, session) as String
+
+        Thread.sleep(1000)
+
         while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
         val address = hasBeenFulfilled.invoke(service, requestID) as String
         return address
