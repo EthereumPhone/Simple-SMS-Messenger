@@ -109,6 +109,7 @@ internal class SignerImpl(context: Context) : Signer {
             if (output != null && output != "notfulfilled") {
                 break;
             }
+            Thread.sleep(1000)
         }
 
         return hasBeenFulfilled.invoke(service, requestID) as String
