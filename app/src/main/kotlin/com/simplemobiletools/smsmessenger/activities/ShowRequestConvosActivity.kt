@@ -85,14 +85,23 @@ class ShowRequestConvosActivity : SimpleActivity() {
     }
 
     fun loginView(){
-        walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
+        if (this.getSystemService("wallet") != null) {
+            walletConnectButton.visibility = View.INVISIBLE
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
+            xmtpApi.allConversations.whenComplete { strings, throwable ->
+                progressBar.visibility = View.INVISIBLE
+                initMessenger(strings)
+            }
+        } else {
+            walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
+        }
     }
 
     fun onConnected(address:String) {
         //go to main activity
         val view = findViewById<View>(R.id.walletConnectButton)
         view.visibility = View.INVISIBLE
-        val xmtpApi = XMTPApi(this, SignerImpl(walletConnectKit = walletConnectKit), false)
+        val xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
         xmtpApi.allConversations.whenComplete { strings, throwable ->
             progressBar.visibility = View.INVISIBLE
             initMessenger(strings)

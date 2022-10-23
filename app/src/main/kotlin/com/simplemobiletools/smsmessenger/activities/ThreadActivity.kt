@@ -172,6 +172,9 @@ class ThreadActivity : SimpleActivity() {
         refreshMenuItems()
 
         val walletConnectButton = findViewById<WalletConnectButton>(R.id.walletConnectButtonThread)
+        if (getSystemService("wallet") != null) {
+            walletConnectButton.visibility = View.INVISIBLE
+        }
         walletConnectButton.start(walletConnectKit) {
             walletConnectButton.visibility = View.INVISIBLE
         }

@@ -116,9 +116,7 @@ class MainActivity : SimpleActivity() {
         if (this.getSystemService("wallet") != null) {
             walletConnectButton.visibility = View.INVISIBLE
             val xmtpApi = XMTPApi(this, SignerImpl(context = this), true)
-            xmtpApi.peerAccounts.whenComplete { strings, throwable ->
-                println(strings)
-            }
+
             val sharedPreferences = this.getPreferences(MODE_PRIVATE)
             val editor = sharedPreferences.edit()
             editor.putBoolean("eth_connected", true)
