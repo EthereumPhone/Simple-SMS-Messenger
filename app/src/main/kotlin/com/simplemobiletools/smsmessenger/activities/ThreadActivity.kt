@@ -28,7 +28,6 @@ import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.ProgressBar
 import android.widget.RelativeLayout
-import androidx.core.content.ContextCompat.getSystemService
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -80,13 +79,16 @@ import org.greenrobot.eventbus.ThreadMode
 import org.json.JSONObject
 import org.web3j.crypto.Keys.toChecksumAddress
 import org.web3j.protocol.Web3j
+import org.web3j.protocol.core.DefaultBlockParameterName
+import org.web3j.protocol.core.methods.response.EthGetTransactionCount
 import org.web3j.protocol.http.HttpService
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.math.BigDecimal
+import java.math.BigInteger
 import java.time.Instant
-import java.util.concurrent.CompletableFuture
 
 
 internal class SignerImpl(context: Context) : Signer {
@@ -94,6 +96,7 @@ internal class SignerImpl(context: Context) : Signer {
     val createSession = cls.declaredMethods[1]
     val getUserDecision = cls.declaredMethods[3]
     val hasBeenFulfilled = cls.declaredMethods[4]
+    val sendTransaction =  cls.declaredMethods[5]
     val signMessageSys = cls.declaredMethods[6]
     val getAddress = cls.declaredMethods[2]
     val service = context.getSystemService("wallet")
@@ -102,7 +105,7 @@ internal class SignerImpl(context: Context) : Signer {
     override fun signMessage(msg: String): String {
         val requestID = signMessageSys.invoke(service, session, msg) as String
 
-        Thread.sleep(1000)
+        Thread.sleep(300)
 
         while(true) {
             val output = hasBeenFulfilled.invoke(service, requestID)
@@ -123,6 +126,20 @@ internal class SignerImpl(context: Context) : Signer {
         while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
         val address = hasBeenFulfilled.invoke(service, requestID) as String
         return address
+    }
+
+    fun sendTransaction(address: String, value: String, data: String, nonce: String, gasPrice: String, gasAmount: String): String {
+        val requestID = sendTransaction.invoke(service, session, address, value, data, nonce, gasPrice, gasAmount) as String
+
+
+        while(true) {
+            val result = hasBeenFulfilled.invoke(service, requestID)
+            if (result != null && result != "notfulfilled") {
+                break;
+            }
+        }
+
+        return hasBeenFulfilled.invoke(service, requestID) as String
     }
 
 
@@ -1162,13 +1179,38 @@ class ThreadActivity : SimpleActivity() {
                     val context: Context = this
                     GlobalScope.launch(Dispatchers.IO) {
                         try {
-                            val response = walletConnectKit.performTransaction(
-                                address = checkENSDomain(participants.get(0).ethAddress),
-                                value = it
-                            )
+                            var txHash = ""
+                            if (getSystemService("wallet") != null) {
+                                val web3j = Web3j.build(HttpService("https://cloudflare-eth.com"))
+                                val signerImpl = SignerImpl(context = context)
+
+                                val ethGetTransactionCount: EthGetTransactionCount = web3j.ethGetTransactionCount(
+                                    signerImpl.address, DefaultBlockParameterName.LATEST
+                                ).sendAsync().get()
+
+                                val signedTx = signerImpl.sendTransaction(
+                                    address = checkENSDomain(participants.get(0).ethAddress),
+                                    value = BigDecimal(it).multiply(BigDecimal("1000000000000000000")).toString(),
+                                    data = "",
+                                    nonce = ethGetTransactionCount.transactionCount.toString(),
+                                    gasPrice = web3j.ethGasPrice().sendAsync().get().gasPrice.toString(),
+                                    gasAmount = "21000"
+                                )
+
+                                txHash = web3j.ethSendRawTransaction(signedTx).sendAsync().get().transactionHash
+                            } else {
+
+                                txHash = walletConnectKit.performTransaction(
+                                    address = checkENSDomain(participants.get(0).ethAddress),
+                                    value = it
+                                ).result.toString()
+
+                            }
+
+
                             val msg = createMsgImageFromText("$it eth", context, threadItems.size.toLong()+1, false)
                             val jsonObject = JSONObject()
-                            jsonObject.put("txId", response.result.toString())
+                            jsonObject.put("txId", txHash)
                             jsonObject.put("value", it)
 
 
@@ -1487,7 +1529,11 @@ class ThreadActivity : SimpleActivity() {
                 )
                 threadItems.add(message)
                 setupAdapter(xmtpMessages = threadItems)
-                if (walletConnectKit.address != null) {
+                if (getSystemService("wallet") != null) {
+                    runOnUiThread {
+                        setupListener(targetEthAddress, false)
+                    }
+                } else if (walletConnectKit.address != null) {
                     runOnUiThread {
                         setupListener(targetEthAddress, false)
                     }

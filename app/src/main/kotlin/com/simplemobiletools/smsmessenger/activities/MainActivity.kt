@@ -123,6 +123,7 @@ class MainActivity : SimpleActivity() {
             editor.putBoolean("isInitilized", true)
             editor.apply();
         } else if (!this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
+            walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
             ConfirmationDialog(
                 activity = this,
                 message = "For XMTP Messaging to work, please click the WalletConnect Button",
@@ -132,7 +133,6 @@ class MainActivity : SimpleActivity() {
                 println("Confirmed")
             }
         }
-        walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
     }
 
     fun onConnected(address:String){
@@ -454,11 +454,20 @@ class MainActivity : SimpleActivity() {
             ConversationsAdapter(this, sortedConversations, conversations_list) {
                 if (this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
                     val sharedPreferences = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
-                    launchThreadActivity(
-                        name = (it as Conversation).title,
-                        ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", walletConnectKit.address!!)!!,
-                        threadId = (it as Conversation).threadId
-                    )
+                    if (getSystemService("wallet") == null) {
+                        launchThreadActivity(
+                            name = (it as Conversation).title,
+                            ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", walletConnectKit.address!!)!!,
+                            threadId = (it as Conversation).threadId
+                        )
+                    } else {
+                        launchThreadActivity(
+                            name = (it as Conversation).title,
+                            ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", SignerImpl(context = this).address)!!,
+                            threadId = (it as Conversation).threadId
+                        )
+                    }
+
                     /**
                     Intent(this, ThreadActivity::class.java).apply {
                         putExtra(THREAD_ID, (it as Conversation).threadId)

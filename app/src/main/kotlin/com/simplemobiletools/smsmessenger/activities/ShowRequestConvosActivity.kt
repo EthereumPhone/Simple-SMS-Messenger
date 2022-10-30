@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Telephony
 import android.view.View
+import android.widget.ProgressBar
 import android.widget.Toast
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -80,6 +81,10 @@ class ShowRequestConvosActivity : SimpleActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_show_request_convos)
 
+        val progressBar = findViewById<ProgressBar>(R.id.progressBar)
+        //setViewPositionAccordingToCenter(progressBar, progressBar.width, progressBar.height)
+
+
         clearAllMessagesIfNeeded()
         loginView()
     }
@@ -108,6 +113,13 @@ class ShowRequestConvosActivity : SimpleActivity() {
         }
 
     }
+
+    fun setViewPositionAccordingToCenter(view: View, x: Int, y: Int){
+        view.setX((x - (view.getWidth()/2)).toFloat())
+        view.setY((y - (view.getHeight()/2)).toFloat())
+    }
+
+
     fun onDisconnected(){
         //exit the app
         val view = findViewById<View>(R.id.walletConnectButton)
