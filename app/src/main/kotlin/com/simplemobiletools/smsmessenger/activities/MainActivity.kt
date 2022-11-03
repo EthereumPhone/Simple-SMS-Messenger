@@ -2,8 +2,10 @@ package com.simplemobiletools.smsmessenger.activities
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
@@ -12,7 +14,11 @@ import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Telephony
+import android.view.View
 import android.widget.Toast
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import com.simplemobiletools.commons.dialogs.ConfirmationDialog
 import com.simplemobiletools.commons.dialogs.FilePickerDialog
 import com.simplemobiletools.commons.extensions.*
 import com.simplemobiletools.commons.helpers.*
@@ -20,22 +26,31 @@ import com.simplemobiletools.commons.models.FAQItem
 import com.simplemobiletools.commons.models.Release
 import com.simplemobiletools.smsmessenger.BuildConfig
 import com.simplemobiletools.smsmessenger.R
+import com.simplemobiletools.smsmessenger.XMTPListenService
 import com.simplemobiletools.smsmessenger.adapters.ConversationsAdapter
 import com.simplemobiletools.smsmessenger.dialogs.ExportMessagesDialog
 import com.simplemobiletools.smsmessenger.dialogs.ImportMessagesDialog
 import com.simplemobiletools.smsmessenger.extensions.*
-import com.simplemobiletools.smsmessenger.helpers.EXPORT_MIME_TYPE
-import com.simplemobiletools.smsmessenger.helpers.MessagesExporter
-import com.simplemobiletools.smsmessenger.helpers.THREAD_ID
-import com.simplemobiletools.smsmessenger.helpers.THREAD_TITLE
+import com.simplemobiletools.smsmessenger.helpers.*
 import com.simplemobiletools.smsmessenger.models.Conversation
 import com.simplemobiletools.smsmessenger.models.Events
+import dev.pinkroom.walletconnectkit.WalletConnectKit
+import dev.pinkroom.walletconnectkit.WalletConnectKitConfig
 import kotlinx.android.synthetic.main.activity_main.*
+import kotlinx.android.synthetic.main.activity_main.conversations_fastscroller
+import kotlinx.android.synthetic.main.activity_main.conversations_list
+import kotlinx.android.synthetic.main.activity_main.main_coordinator
+import kotlinx.android.synthetic.main.activity_main.no_conversations_placeholder
+import kotlinx.android.synthetic.main.activity_main.no_conversations_placeholder_2
+import kotlinx.android.synthetic.main.activity_main.walletConnectButton
+import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.json.JSONObject
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.time.Instant
 import java.util.*
 
 class MainActivity : SimpleActivity() {
@@ -43,10 +58,20 @@ class MainActivity : SimpleActivity() {
     private val PICK_IMPORT_SOURCE_INTENT = 11
     private val PICK_EXPORT_FILE_INTENT = 21
 
+
     private var storedTextColor = 0
     private var storedFontSize = 0
     private var bus: EventBus? = null
     private val smsExporter by lazy { MessagesExporter(this) }
+    private val walletconnectconfig = WalletConnectKitConfig(
+        context = this,
+        bridgeUrl = "https://bridge.walletconnect.org",
+        appUrl = "https://ethereumphone.org",
+        appName = "ethOS SMS",
+        appDescription = "Send SMS and messages over the XMTP App on ethOS"
+    )
+    private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
+
 
     @SuppressLint("InlinedApi")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +79,7 @@ class MainActivity : SimpleActivity() {
         setContentView(R.layout.activity_main)
         appLaunched(BuildConfig.APPLICATION_ID)
         setupOptionsMenu()
+
 
         if (checkAppSideloading()) {
             return
@@ -83,8 +109,62 @@ class MainActivity : SimpleActivity() {
         }
 
         clearAllMessagesIfNeeded()
+        loginView()
     }
 
+    fun loginView(){
+        if (this.getSystemService("wallet") != null) {
+            walletConnectButton.visibility = View.INVISIBLE
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this), true)
+
+            val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+            val editor = sharedPreferences.edit()
+            editor.putBoolean("eth_connected", true)
+            editor.putBoolean("isInitilized", true)
+            editor.apply();
+        } else if (!this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
+            walletConnectButton.start(walletConnectKit, ::onConnected, ::onDisconnected)
+            ConfirmationDialog(
+                activity = this,
+                message = "For XMTP Messaging to work, please click the WalletConnect Button",
+                negative = 0,
+                positive = R.string.confirm
+            ) {
+                println("Confirmed")
+            }
+        }
+    }
+
+    fun onConnected(address:String){
+        //go to main activity
+        val view = findViewById<View>(R.id.walletConnectButton)
+        view.visibility = View.INVISIBLE
+        val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+        val xmtp_Key = getSharedPreferences("key", Context.MODE_PRIVATE).getString("key", "null")
+        if (!sharedPreferences.getBoolean("isInitilized", false)) {
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this), true)
+        }
+        if (xmtp_Key == "null") {
+            println("Trying to get XMTP peeraccounts")
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
+            xmtpApi.peerAccounts.whenComplete { strings, throwable ->
+                println(strings)
+            }
+        }
+        val editor = sharedPreferences.edit()
+        editor.putBoolean("eth_connected", true)
+        editor.putBoolean("isInitilized", true)
+        editor.apply();
+    }
+    fun onDisconnected(){
+        //exit the app
+        val view = findViewById<View>(R.id.walletConnectButton)
+        view.visibility = View.VISIBLE
+        val sharedPreferences = this.getPreferences(MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putBoolean("eth_connected", false)
+        editor.apply();
+    }
     override fun onResume() {
         super.onResume()
         setupToolbar(main_toolbar)
@@ -114,7 +194,16 @@ class MainActivity : SimpleActivity() {
     override fun onDestroy() {
         super.onDestroy()
         bus?.unregister(this)
+        val intent = Intent(this, XMTPListenService::class.java)
+        //startService(intent)
     }
+
+    override fun onStop() {
+        super.onStop()
+        val intent = Intent(this, XMTPListenService::class.java)
+        //startService(intent)
+    }
+
 
     private fun setupOptionsMenu() {
         main_toolbar.setOnMenuItemClickListener { menuItem ->
@@ -124,10 +213,16 @@ class MainActivity : SimpleActivity() {
                 R.id.export_messages -> tryToExportMessages()
                 R.id.import_messages -> tryImportMessages()
                 R.id.about -> launchAbout()
+                R.id.showXMTPConvs -> launchShowXMTPConvos()
                 else -> return@setOnMenuItemClickListener false
             }
             return@setOnMenuItemClickListener true
         }
+    }
+
+    private fun launchShowXMTPConvos() {
+        val intent = Intent(this, ShowRequestConvosActivity::class.java)
+        startActivity(intent)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
@@ -189,27 +284,94 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+    private fun removeDuplicates(input: ArrayList<Conversation>): ArrayList<Conversation> {
+        if (input.size == 1) {
+            return input
+        }
+        val output = input
+        output.forEach {
+            input.forEach { orIt ->
+                if (it.title.contains("Ethereum") && it.title == orIt.title) {
+                    output.remove(it)
+                }
+            }
+        }
+        return output
+    }
+
     private fun getCachedConversations() {
         ensureBackgroundThread {
-            val conversations = try {
+            val sharedPreferences1 = this.getPreferences(MODE_PRIVATE)
+
+            var conversations = try {
                 conversationsDB.getAll().toMutableList() as ArrayList<Conversation>
             } catch (e: Exception) {
                 ArrayList()
             }
 
-            updateUnreadCountBadge(conversations)
-            runOnUiThread {
-                setupConversations(conversations)
-                getNewConversations(conversations)
+            if (sharedPreferences1.getBoolean("eth_connected", false)) {
+                val gson = Gson()
+                val type = object : TypeToken<ArrayList<Long?>?>() {}.type
+                val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+                val sharedPreferences2 = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
+                val json = sharedPreferences.getString("eth_threads", "")
+                val outputList = ArrayList<Conversation>()
+                try {
+                    if (json != "") {
+                        val ethThreadList = gson.fromJson(json, type) as ArrayList<Long>
+                        ethThreadList.forEach {
+                            val snippet = if (sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!.contains("<tx_msg>")) {
+                                val realContent = sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
+                                val jsonObject = JSONObject(realContent)
+                                "${jsonObject.getString("value")} eth"
+                            } else {
+                                sharedPreferences2.getString(it.toString()+"_newestMessage", "")!!
+                            }
+                            outputList.add(
+                                Conversation(
+                                    threadId = it,
+                                    snippet = snippet,
+                                    date = Instant.now().epochSecond.toInt(),
+                                    read = true,
+                                    title = sharedPreferences2.getString(it.toString()+"_title", "")!!,
+                                    photoUri = "",
+                                    isGroupConversation = false,
+                                    phoneNumber = ""
+                                )
+                            )
+                        }
+                        conversations.addAll(removeDuplicates(outputList))
+                    }
+                } catch(e: Exception) {
+                    e.printStackTrace()
+                }
+                updateUnreadCountBadge(conversations)
+                runOnUiThread {
+                    setupConversations(conversations)
+                    getNewConversations(conversations, outputList)
+                }
+            } else {
+                updateUnreadCountBadge(conversations)
+                runOnUiThread {
+                    setupConversations(conversations)
+                    getNewConversations(conversations, null)
+                }
             }
+
+
+
         }
     }
 
-    private fun getNewConversations(cachedConversations: ArrayList<Conversation>) {
+    private fun getNewConversations(cachedConversations: ArrayList<Conversation>, ethConversations: ArrayList<Conversation>?) {
         val privateCursor = getMyContactsCursor(false, true)
         ensureBackgroundThread {
             val privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
             val conversations = getConversations(privateContacts = privateContacts)
+
+            if(ethConversations != null) {
+                conversations.addAll(ethConversations)
+            }
 
             runOnUiThread {
                 setupConversations(conversations)
@@ -246,6 +408,30 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+    private fun launchThreadActivity(name: String, ethAddress: String, threadId: Long) {
+        hideKeyboard()
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        Intent(this, ThreadActivity::class.java).apply {
+            putExtra(THREAD_ID, threadId)
+            putExtra(THREAD_TITLE, name)
+            putExtra(THREAD_TEXT, text)
+            putExtra(THREAD_NUMBER, "")
+            putExtra("fromMain", true)
+            putExtra("isEthereum", true)
+            putExtra("eth_address", ethAddress)
+
+            if (intent.action == Intent.ACTION_SEND && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
+                val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                putExtra(THREAD_ATTACHMENT_URI, uri?.toString())
+            } else if (intent.action == Intent.ACTION_SEND_MULTIPLE && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
+                val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                putExtra(THREAD_ATTACHMENT_URIS, uris)
+            }
+
+            startActivity(this)
+        }
+    }
+
     private fun setupConversations(conversations: ArrayList<Conversation>) {
         val hasConversations = conversations.isNotEmpty()
         val sortedConversations = conversations.sortedWith(
@@ -266,10 +452,36 @@ class MainActivity : SimpleActivity() {
         if (currAdapter == null) {
             hideKeyboard()
             ConversationsAdapter(this, sortedConversations, conversations_list) {
-                Intent(this, ThreadActivity::class.java).apply {
-                    putExtra(THREAD_ID, (it as Conversation).threadId)
-                    putExtra(THREAD_TITLE, it.title)
-                    startActivity(this)
+                if (this.getPreferences(MODE_PRIVATE).getBoolean("eth_connected", false)) {
+                    val sharedPreferences = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
+                    if (getSystemService("wallet") == null) {
+                        launchThreadActivity(
+                            name = (it as Conversation).title,
+                            ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", walletConnectKit.address!!)!!,
+                            threadId = (it as Conversation).threadId
+                        )
+                    } else {
+                        launchThreadActivity(
+                            name = (it as Conversation).title,
+                            ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", SignerImpl(context = this).address)!!,
+                            threadId = (it as Conversation).threadId
+                        )
+                    }
+
+                    /**
+                    Intent(this, ThreadActivity::class.java).apply {
+                        putExtra(THREAD_ID, (it as Conversation).threadId)
+                        putExtra(THREAD_TITLE, it.title)
+                        putExtra("fromMain", true)
+                        startActivity(this)
+                    }
+                    */
+                } else {
+                    Intent(this, ThreadActivity::class.java).apply {
+                        putExtra(THREAD_ID, (it as Conversation).threadId)
+                        putExtra(THREAD_TITLE, it.title)
+                        startActivity(this)
+                    }
                 }
             }.apply {
                 conversations_list.adapter = this
@@ -291,6 +503,7 @@ class MainActivity : SimpleActivity() {
             }
         }
     }
+
 
     private fun launchNewConversation() {
         hideKeyboard()
@@ -314,6 +527,8 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+
+
     @SuppressLint("NewApi")
     private fun getCreateNewContactShortcut(appIconColor: Int): ShortcutInfo {
         val newEvent = getString(R.string.new_conversation)
@@ -330,6 +545,7 @@ class MainActivity : SimpleActivity() {
             .setIntent(intent)
             .build()
     }
+
 
     private fun launchSearch() {
         hideKeyboard()

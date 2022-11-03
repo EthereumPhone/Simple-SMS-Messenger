@@ -5,6 +5,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+
+
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/main_app_bar_layout"
         android:layout_width="match_parent"
@@ -74,11 +76,16 @@
                         android:id="@+id/conversations_list"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
+                        android:layout_alignParentEnd="true"
+                        android:layout_alignParentBottom="true"
+                        android:layout_marginEnd="0dp"
+                        android:layout_marginBottom="0dp"
                         android:clipToPadding="false"
                         android:layoutAnimation="@anim/layout_animation"
                         android:overScrollMode="ifContentScrolls"
                         android:scrollbars="none"
                         app:layoutManager="com.simplemobiletools.commons.views.MyLinearLayoutManager" />
+
 
                 </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
             </RelativeLayout>
@@ -90,6 +97,15 @@
                 android:layout_gravity="bottom|end"
                 android:layout_margin="@dimen/activity_margin"
                 android:src="@drawable/ic_plus_vector" />
+
+            <dev.pinkroom.walletconnectkit.WalletConnectButton
+                android:id="@+id/walletConnectButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="26dp"
+                android:layout_marginBottom="@dimen/activity_margin"
+                android:layout_gravity="bottom"
+                />
 
         </androidx.coordinatorlayout.widget.CoordinatorLayout>
     </RelativeLayout>

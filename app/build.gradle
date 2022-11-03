@@ -14,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId "com.simplemobiletools.smsmessenger"
-        minSdkVersion 22
+        minSdk 28
         targetSdkVersion 33
         versionCode 60
         versionName "5.15.0"
@@ -30,6 +30,10 @@ android {
                 storePassword keystoreProperties['storePassword']
             }
         }
+    }
+
+    configurations {
+        all*.exclude module: 'bcprov-jdk15on'
     }
 
     buildTypes {
@@ -64,15 +68,23 @@ android {
 
 dependencies {
     // implementation 'com.github.SimpleMobileTools:Simple-Commons:141660c8f9'
-    implementation 'com.github.EthereumPhone:Simple-Commons:master-SNAPSHOT'
+    // implementation 'com.github.EthereumPhone:Simple-Commons:6822270a1d'
     implementation 'org.greenrobot:eventbus:3.3.1'
     implementation 'com.github.tibbi:IndicatorFastScroll:4524cd0b61'
     implementation 'com.github.tibbi:android-smsmms:4cdacdb701'
     implementation "me.leolin:ShortcutBadger:1.1.22"
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     implementation 'com.googlecode.ez-vcard:ez-vcard:0.11.3'
-
+    //implementation 'com.github.EthereumPhone:xmtp-android-sdk:0.1.5'
+    implementation 'dev.pinkroom:walletconnectkit:0.3.2'
+    implementation project(path: ':commons')
+    implementation project(path: ':xmtp-android-sdk')
+    implementation 'androidx.appcompat:appcompat:1.5.1'
+    implementation 'com.google.android.material:material:1.4.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     kapt "androidx.room:room-compiler:2.4.3"
     implementation "androidx.room:room-runtime:2.4.3"
     annotationProcessor "androidx.room:room-compiler:2.4.3"
+    implementation 'com.google.code.gson:gson:2.8.8'
+    implementation 'org.web3j:core:4.8.7-android'
 }

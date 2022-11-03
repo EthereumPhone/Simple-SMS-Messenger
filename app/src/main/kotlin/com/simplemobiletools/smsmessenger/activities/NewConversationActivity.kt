@@ -21,6 +21,7 @@ import kotlinx.android.synthetic.main.activity_new_conversation.*
 import kotlinx.android.synthetic.main.item_suggested_contact.view.*
 import java.net.URLDecoder
 import java.util.*
+import java.util.function.Predicate
 
 class NewConversationActivity : SimpleActivity() {
     private var allContacts = ArrayList<SimpleContact>()
@@ -61,10 +62,14 @@ class NewConversationActivity : SimpleActivity() {
                 if (contact.phoneNumbers.any { it.normalizedNumber.contains(searchString, true) } ||
                     contact.name.contains(searchString, true) ||
                     contact.name.contains(searchString.normalizeString(), true) ||
-                    contact.name.normalizeString().contains(searchString, true)) {
+                    contact.name.normalizeString().contains(searchString, true) ||
+                    contact.ethAddress.any()) {
                     filteredContacts.add(contact)
                 }
+
             }
+
+
 
             filteredContacts.sortWith(compareBy { !it.name.startsWith(searchString, true) })
             setupAdapter(filteredContacts)
@@ -120,6 +125,8 @@ class NewConversationActivity : SimpleActivity() {
             }
         }
     }
+
+
 
     private fun setupAdapter(contacts: ArrayList<SimpleContact>) {
         val hasContacts = contacts.isNotEmpty()
@@ -227,6 +234,9 @@ class NewConversationActivity : SimpleActivity() {
             putExtra(THREAD_TEXT, text)
             putExtra(THREAD_NUMBER, number)
             putExtra("eth_address", ethAddress)
+            if (ethAddress != "0x0") {
+                putExtra("isEthereum", true)
+            }
 
             if (intent.action == Intent.ACTION_SEND && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
                 val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)

@@ -3,19 +3,22 @@ package com.simplemobiletools.smsmessenger.activities
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.graphics.*
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
+import android.os.StrictMode
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.telephony.SubscriptionManager
 import android.text.TextUtils
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -23,6 +26,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
+import android.widget.ProgressBar
 import android.widget.RelativeLayout
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
@@ -40,13 +44,16 @@ import com.klinker.android.send_message.Transaction
 import com.klinker.android.send_message.Utils.getNumPages
 import com.simplemobiletools.commons.dialogs.ConfirmationDialog
 import com.simplemobiletools.commons.dialogs.RadioGroupDialog
+import com.simplemobiletools.commons.dialogs.SendEthDialog
 import com.simplemobiletools.commons.extensions.*
 import com.simplemobiletools.commons.helpers.*
 import com.simplemobiletools.commons.models.PhoneNumber
 import com.simplemobiletools.commons.models.RadioItem
 import com.simplemobiletools.commons.models.SimpleContact
+import com.simplemobiletools.commons.views.MyButton
 import com.simplemobiletools.commons.views.MyRecyclerView
 import com.simplemobiletools.smsmessenger.R
+import com.simplemobiletools.smsmessenger.XMTPListenService
 import com.simplemobiletools.smsmessenger.adapters.AutoCompleteTextViewAdapter
 import com.simplemobiletools.smsmessenger.adapters.ThreadAdapter
 import com.simplemobiletools.smsmessenger.extensions.*
@@ -54,15 +61,90 @@ import com.simplemobiletools.smsmessenger.helpers.*
 import com.simplemobiletools.smsmessenger.models.*
 import com.simplemobiletools.smsmessenger.receivers.SmsStatusDeliveredReceiver
 import com.simplemobiletools.smsmessenger.receivers.SmsStatusSentReceiver
+import dev.pinkroom.walletconnectkit.WalletConnectButton
+import dev.pinkroom.walletconnectkit.WalletConnectKit
+import dev.pinkroom.walletconnectkit.WalletConnectKitConfig
 import kotlinx.android.synthetic.main.activity_thread.*
 import kotlinx.android.synthetic.main.item_attachment.view.*
 import kotlinx.android.synthetic.main.item_selected_contact.view.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import org.ethereumphone.xmtp_android_sdk.MessageCallback
+import org.ethereumphone.xmtp_android_sdk.Signer
+import org.ethereumphone.xmtp_android_sdk.XMTPApi
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.json.JSONObject
+import org.web3j.crypto.Keys.toChecksumAddress
+import org.web3j.protocol.Web3j
+import org.web3j.protocol.core.DefaultBlockParameterName
+import org.web3j.protocol.core.methods.response.EthGetTransactionCount
+import org.web3j.protocol.http.HttpService
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.math.BigDecimal
+import java.math.BigInteger
+import java.time.Instant
+
+
+internal class SignerImpl(context: Context) : Signer {
+    val cls = Class.forName("android.os.WalletProxy")
+    val createSession = cls.declaredMethods[1]
+    val getUserDecision = cls.declaredMethods[3]
+    val hasBeenFulfilled = cls.declaredMethods[4]
+    val sendTransaction =  cls.declaredMethods[5]
+    val signMessageSys = cls.declaredMethods[6]
+    val getAddress = cls.declaredMethods[2]
+    val service = context.getSystemService("wallet")
+    val session = createSession.invoke(service) as String
+
+    override fun signMessage(msg: String): String {
+        val requestID = signMessageSys.invoke(service, session, msg) as String
+
+        Thread.sleep(300)
+
+        while(true) {
+            val output = hasBeenFulfilled.invoke(service, requestID)
+            if (output != null && output != "notfulfilled") {
+                break;
+            }
+            Thread.sleep(1000)
+        }
+
+        return hasBeenFulfilled.invoke(service, requestID) as String
+    }
+
+    override fun getAddress(): String {
+        val requestID = getAddress.invoke(service, session) as String
+
+        Thread.sleep(1000)
+
+        while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
+        val address = hasBeenFulfilled.invoke(service, requestID) as String
+        return address
+    }
+
+    fun sendTransaction(address: String, value: String, data: String, nonce: String, gasPrice: String, gasAmount: String): String {
+        val requestID = sendTransaction.invoke(service, session, address, value, data, nonce, gasPrice, gasAmount) as String
+
+
+        while(true) {
+            val result = hasBeenFulfilled.invoke(service, requestID)
+            if (result != null && result != "notfulfilled") {
+                break;
+            }
+        }
+
+        return hasBeenFulfilled.invoke(service, requestID) as String
+    }
+
+
+}
+
 
 class ThreadActivity : SimpleActivity() {
     private val MIN_DATE_TIME_DIFF_SECS = 300
@@ -72,6 +154,7 @@ class ThreadActivity : SimpleActivity() {
 
     private val TYPE_TAKE_PHOTO = 12
     private val TYPE_CHOOSE_PHOTO = 13
+    private val TYPE_SEND_ETH = 14
 
     private var threadId = 0L
     private var currentSIMCardIndex = 0
@@ -91,6 +174,23 @@ class ThreadActivity : SimpleActivity() {
     private var allMessagesFetched = false
     private var oldestMessageDate = -1
     private var isEthereum = false
+    private val participantsXMTPAddr = HashMap<String, String>()
+    private var targetEthAddress = ""
+
+    private val allImageUris = ArrayList<Uri>()
+
+    private val walletconnectconfig = WalletConnectKitConfig(
+        context = this,
+        bridgeUrl = "https://bridge.walletconnect.org",
+        appUrl = "https://ethereumphone.org",
+        appName = "ethOS SMS",
+        appDescription = "Send SMS and messages over the XMTP App on ethOS"
+    )
+    private val walletConnectKit by lazy { WalletConnectKit.Builder(walletconnectconfig).build() }
+
+    private var xmtpApi: XMTPApi? = null
+
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,12 +198,105 @@ class ThreadActivity : SimpleActivity() {
         setupOptionsMenu()
         refreshMenuItems()
 
+        val walletConnectButton = findViewById<WalletConnectButton>(R.id.walletConnectButtonThread)
+        if (getSystemService("wallet") != null) {
+            walletConnectButton.visibility = View.INVISIBLE
+        }
+        walletConnectButton.start(walletConnectKit) {
+            walletConnectButton.visibility = View.INVISIBLE
+        }
+
+        val progressBar: ProgressBar = findViewById(R.id.progressBarLoadingXMTP)
+        progressBar.visibility = View.INVISIBLE
+        isEthereum = intent.getBooleanExtra("isEthereum", false)
+
+
+        xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
+        // Test: 0x2374eFc48c028C98e259a7bBcba336d6acFF103c
+        //xmtpMessages = xmtpGetMessages("0x2374eFc48c028C98e259a7bBcba336d6acFF103c")
+
+        if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
+            isEthereum = true
+            val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
+            if (address != null) {
+                participants.get(0).ethAddress = checkENSDomain(address)
+            }
+        }
+        if(isEthereum) {
+            targetEthAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
+            if (intent.getBooleanExtra("fromNewConvo", false)) {
+                val contact = SimpleContact(0, 0, targetEthAddress, "", ArrayList(), ArrayList(), ArrayList(), targetEthAddress)
+                participants.add(contact)
+            }
+
+            val intentNumbers = getPhoneNumbersFromIntent()
+            this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
+            progressBar.visibility = View.VISIBLE
+            xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
+                Log.d("First message on XMTP", p0?.get(0)!!)
+                val output = ArrayList<ThreadItem>()
+                var numberOfChat: Long = 1
+                p0.forEach {
+                    val jsonObject = JSONObject(it)
+                    if (jsonObject.has("error")) {
+                        return@forEach
+                    }
+                    val senderAddress = jsonObject.get("senderAddress")
+                    val xmtpSenderAddress = jsonObject.get("xmtpSenderAddress")
+                    participantsXMTPAddr.put((senderAddress as String).lowercase(), (xmtpSenderAddress as String).lowercase())
+                    val senderName = participants.get(0).name
+                    val content = jsonObject.get("content") as String
+                    if (content.contains("tx_msg")) {
+                        val realContent = content.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
+                        val jsonObject = JSONObject(realContent)
+                        val msg = createMsgImageFromText("${jsonObject.getString("value")} eth", this, numberOfChat, targetEthAddress != senderAddress)
+                        output.add(msg)
+                        numberOfChat += 1
+                        return@forEach
+                    }
+                    val type = if (targetEthAddress == senderAddress) {
+                        1
+                    } else {
+                        2
+                    }
+                    val message = Message(
+                        attachment = null,
+                        body = content,
+                        date = Instant.now().epochSecond.toInt(),
+                        id = numberOfChat,
+                        isMMS = false,
+                        participants = participants,
+                        read = false,
+                        senderName = senderName,
+                        senderPhotoUri = "",
+                        status = -1,
+                        subscriptionId = -1,
+                        threadId = threadId,
+                        type = type
+                    )
+                    output.add(message)
+                    numberOfChat += 1
+                }
+                setupAdapter(xmtpMessages = output)
+                saveThreadList()
+                setupSaves()
+                progressBar.visibility = View.INVISIBLE
+            }
+            if (targetEthAddress != null) {
+                setupListener(targetEthAddress, false)
+            }
+
+        }
+
+
         val extras = intent.extras
         if (extras == null) {
+            toast("Extra null")
             toast(R.string.unknown_error_occurred)
             finish()
             return
         }
+
 
         clearAllMessagesIfNeeded()
         threadId = intent.getLongExtra(THREAD_ID, 0L)
@@ -126,6 +319,16 @@ class ThreadActivity : SimpleActivity() {
                         }
                     }
 
+                    isEthereum = participants.size == 1 && checkENSDomain(participants.get(0).ethAddress) != "0x0"
+
+                    if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
+                        isEthereum = true
+                        val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
+                        if (address != null) {
+                            participants.get(0).ethAddress = address
+                        }
+                    }
+
                     setupThread()
                 }
             } else {
@@ -133,6 +336,95 @@ class ThreadActivity : SimpleActivity() {
             }
         }
     }
+
+    private fun checkENSDomain(input: String): String {
+        if (input.endsWith(".eth")) {
+            val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
+            StrictMode.setThreadPolicy(policy)
+
+            val web3j = Web3j.build(HttpService("https://cloudflare-eth.com/"))
+            val ensResolver = ENSResolver(web3j)
+            return try {
+                val address = toChecksumAddress(ensResolver.resolve(input))
+                address
+            } catch (e: Exception) {
+                e.printStackTrace()
+                input
+            }
+        } else {
+            return input
+        }
+    }
+
+    private fun saveThreadAsEth() {
+        val gson = Gson()
+        val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+        val json = sharedPreferences.getString("eth_threads", "")
+        if (json != "") {
+            val type = object : TypeToken<ArrayList<Long?>?>() {}.type
+            try {
+                val ethThreadList = gson.fromJson(json, type) as ArrayList<Long>
+                if(!ethThreadList.contains(threadId)) {
+                    ethThreadList.add(threadId)
+                    val editor = sharedPreferences.edit()
+                    editor.putString("eth_threads", gson.toJson(ethThreadList))
+                    editor.apply()
+                }
+            } catch(e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            val ethThreadList = ArrayList<Long>()
+            ethThreadList.add(threadId)
+            val editor = sharedPreferences.edit()
+            editor.putString("eth_threads", gson.toJson(ethThreadList))
+            editor.apply()
+        }
+    }
+
+    private fun setupSaves() {
+        val ethAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
+        val sharedPreferences = getSharedPreferences("ETHADDR", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putString(threadId.toString()+"_ethAddress", ethAddress)
+        val titleString = thread_toolbar.title.toString()
+        editor.putString(threadId.toString()+"_title", titleString)
+        if (threadItems.size > 0) {
+            editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
+        }
+        editor.apply()
+        val sendButton = findViewById<MyButton>(R.id.thread_send_message)
+        sendButton.text = "XMTP"
+    }
+
+    private fun saveEthContact() {
+        val gson = Gson()
+        val sharedPreferences = getSharedPreferences("CONTACT", Context.MODE_PRIVATE)
+
+        try {
+            val editor = sharedPreferences.edit()
+            val json = gson.toJson(participants)
+            val key = threadId.toString()+"_ethContact"
+            editor.putString(key, json)
+            editor.apply()
+        } catch(e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadEthContact() {
+        val gson = Gson()
+        val sharedPreferences = getSharedPreferences("CONTACT", Context.MODE_PRIVATE)
+        val type = object : TypeToken<ArrayList<SimpleContact?>?>() {}.type
+        try {
+            val key = threadId.toString()+"_ethContact"
+            val json = sharedPreferences.getString(key, "")
+            participants = gson.fromJson(json, type)
+        } catch(e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
 
     override fun onResume() {
         super.onResume()
@@ -143,6 +435,47 @@ class ThreadActivity : SimpleActivity() {
             thread_type_message.setText(smsDraft)
         }
         isActivityVisible = true
+        if(isEthereum) {
+           loadThreadList()
+        }
+    }
+
+    fun setupListener(ethAddress: String, lookup: Boolean) {
+        val xmtpAddr = if(lookup) {
+            participantsXMTPAddr.get(ethAddress.lowercase())
+        } else {
+            ethAddress
+        }
+        xmtpApi!!.listenMessages(checkENSDomain(xmtpAddr!!), MessageCallback { from, content ->
+            println("New message from $from: $content")
+            if ((threadItems.get(threadItems.size.toInt()-1) as Message).body == content) {
+                return@MessageCallback
+            }
+            val type = if (ethAddress == from) {
+                1
+            } else {
+                2
+            }
+            val message = Message(
+                attachment = null,
+                body = content,
+                date = Instant.now().epochSecond.toInt(),
+                id = threadItems.size.toLong(),
+                isMMS = false,
+                participants = participants,
+                read = false,
+                senderName = participants.get(0).name,
+                senderPhotoUri = "",
+                status = -1,
+                subscriptionId = -1,
+                threadId = threadId,
+                type = type
+            )
+            threadItems.add(message)
+            setupAdapter(xmtpMessages = threadItems)
+            saveThreadList()
+            setupSaves()
+        })
     }
 
     override fun onPause() {
@@ -153,15 +486,72 @@ class ThreadActivity : SimpleActivity() {
         } else {
             deleteSmsDraft(threadId)
         }
+        if(!isEthereum) {
+            bus?.post(Events.RefreshMessages())
+        } else {
+            saveThreadList()
+        }
 
-        bus?.post(Events.RefreshMessages())
 
         isActivityVisible = false
+
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        bus?.unregister(this)
+        if (!isEthereum) {
+            bus?.unregister(this)
+        } else {
+            saveThreadList()
+            val intent = Intent(this, XMTPListenService::class.java)
+            startService(intent)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if(isEthereum) {
+            allImageUris.forEach {
+                try {
+                    getPathFromURI(it)?.let { it1 -> File(it1).delete() }
+                } catch(e: android.database.CursorIndexOutOfBoundsException) {
+                    e.printStackTrace()
+                }
+            }
+            saveThreadList()
+            val intent = Intent(this, XMTPListenService::class.java)
+            startService(intent)
+        }
+    }
+
+    private fun saveThreadList() {
+        // Saving thread
+        val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        val gson = Gson()
+        val json = gson.toJson(threadItems)
+        editor.putString(threadId.toString()+"_items", json)
+        // Saving newest message
+        if (threadItems.size > 0) {
+            editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
+        }
+        editor.apply()
+    }
+
+    private fun loadThreadList() {
+        val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
+        val gson = Gson()
+        val json = sharedPreferences.getString(threadId.toString()+"_items", "")
+        if (json != "") {
+            val type = object : TypeToken<ArrayList<Message?>?>() {}.type
+            try {
+                threadItems = gson.fromJson(json, type)
+                setupAdapter(xmtpMessages = threadItems)
+            } catch(e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
     }
 
     private fun refreshMenuItems() {
@@ -234,7 +624,7 @@ class ThreadActivity : SimpleActivity() {
             }
 
             setupParticipants()
-            setupAdapter()
+            setupAdapter(ArrayList())
 
             runOnUiThread {
                 if (messages.isEmpty()) {
@@ -264,7 +654,9 @@ class ThreadActivity : SimpleActivity() {
 
             try {
                 if (participants.isNotEmpty() && messages.hashCode() == cachedMessagesCode && !hasParticipantWithoutName) {
-                    setupAdapter()
+                    if (!isEthereum){
+                        setupAdapter(ArrayList())
+                    }
                     return@ensureBackgroundThread
                 }
             } catch (ignored: Exception) {
@@ -309,16 +701,27 @@ class ThreadActivity : SimpleActivity() {
             }
 
             setupAttachmentSizes()
-            setupAdapter()
+            if (!isEthereum) {
+                setupAdapter(ArrayList())
+            }
             runOnUiThread {
                 setupThreadTitle()
                 setupSIMSelector()
+                val sendButton = findViewById<MyButton>(R.id.thread_send_message)
+                if (isEthereum) {
+                    sendButton.text = "XMTP"
+                } else {
+                    sendButton.text = "SMS"
+                }
             }
         }
     }
 
-    private fun setupAdapter() {
-        threadItems = getThreadItems()
+    private fun setupAdapter(xmtpMessages: ArrayList<ThreadItem>) {
+
+        if (xmtpMessages.size > 0) {
+            threadItems = xmtpMessages
+        }
 
         runOnUiThread {
             refreshMenuItems()
@@ -500,12 +903,17 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupParticipants() {
+        val gson = Gson()
+        if (intent.getBooleanExtra("fromMain", false)) {
+            // From MainActivity
+            loadEthContact()
+        }
         if (participants.isEmpty()) {
             participants = if (messages.isEmpty()) {
                 val intentNumbers = getPhoneNumbersFromIntent()
                 val ethAddress = intent.getStringExtra("eth_address") ?: "0x0"
                 val participants = if (ethAddress != "0x0") {
-                    getThreadParticipants(threadId, null, ethAddress)
+                    getThreadParticipants(threadId, null, ethAddress, intent.getStringExtra(THREAD_TITLE) ?: "")
                 } else {
                     getThreadParticipants(threadId, null)
                 }
@@ -514,13 +922,25 @@ class ThreadActivity : SimpleActivity() {
                 messages.first().participants
             }
         }
+
+        if (isEthereum && !intent.getBooleanExtra("fromMain", false)) {
+            saveEthContact()
+            saveThreadAsEth()
+            setupSaves()
+        }
     }
 
     private fun setupThreadTitle() {
-        if (participants.size == 1 && participants.get(0).ethAddress != "0x0") {
+        if (isEthereum) {
             print("The address in question: "+participants.get(0).ethAddress)
             thread_toolbar.title = participants.get(0).name + " - Ethereum"
-            isEthereum = true;
+            isEthereum = true
+            //Test message - could be Welcoming Message in the future
+            /*xmtpApi.sendMessage("Hey!", "0xefBABdeE59968641DC6E892e30C470c2b40157Cd").whenComplete { s, throwable ->
+                Log.d("First message on TEST", s)
+            }*/
+            //setupEthereum()
+
         } else {
             val threadTitle = participants.getThreadTitle()
             if (threadTitle.isNotEmpty()) {
@@ -528,6 +948,7 @@ class ThreadActivity : SimpleActivity() {
             }
         }
     }
+
 
     @SuppressLint("MissingPermission")
     private fun setupSIMSelector() {
@@ -742,7 +1163,8 @@ class ThreadActivity : SimpleActivity() {
     private fun takeOrPickPhotoVideo() {
         val items = arrayListOf(
             RadioItem(TYPE_TAKE_PHOTO, getString(R.string.take_photo)),
-            RadioItem(TYPE_CHOOSE_PHOTO, getString(R.string.choose_photo))
+            RadioItem(TYPE_CHOOSE_PHOTO, getString(R.string.choose_photo)),
+            RadioItem(TYPE_SEND_ETH, "Send eth")
         )
         RadioGroupDialog(this, items = items) {
             val checkedId = it as Int
@@ -750,6 +1172,65 @@ class ThreadActivity : SimpleActivity() {
                 launchTakePhotoIntent()
             } else if (checkedId == TYPE_CHOOSE_PHOTO) {
                 launchPickPhotoVideoIntent()
+            } else if (checkedId == TYPE_SEND_ETH) {
+                SendEthDialog(
+                    this
+                ) {
+                    val context: Context = this
+                    GlobalScope.launch(Dispatchers.IO) {
+                        try {
+                            var txHash = ""
+                            if (getSystemService("wallet") != null) {
+                                val web3j = Web3j.build(HttpService("https://cloudflare-eth.com"))
+                                val signerImpl = SignerImpl(context = context)
+
+                                val ethGetTransactionCount: EthGetTransactionCount = web3j.ethGetTransactionCount(
+                                    signerImpl.address, DefaultBlockParameterName.LATEST
+                                ).sendAsync().get()
+
+                                val signedTx = signerImpl.sendTransaction(
+                                    address = checkENSDomain(participants.get(0).ethAddress),
+                                    value = BigDecimal(it).multiply(BigDecimal("1000000000000000000")).toString(),
+                                    data = "",
+                                    nonce = ethGetTransactionCount.transactionCount.toString(),
+                                    gasPrice = web3j.ethGasPrice().sendAsync().get().gasPrice.toString(),
+                                    gasAmount = "21000"
+                                )
+
+                                txHash = web3j.ethSendRawTransaction(signedTx).sendAsync().get().transactionHash
+                            } else {
+
+                                txHash = walletConnectKit.performTransaction(
+                                    address = checkENSDomain(participants.get(0).ethAddress),
+                                    value = it
+                                ).result.toString()
+
+                            }
+
+
+                            val msg = createMsgImageFromText("$it eth", context, threadItems.size.toLong()+1, false)
+                            val jsonObject = JSONObject()
+                            jsonObject.put("txId", txHash)
+                            jsonObject.put("value", it)
+
+
+                            val xmtpmsg = "<tx_msg>$jsonObject</tx_msg>"
+
+                            val target = checkENSDomain(participants.get(0).ethAddress) //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
+                            runOnUiThread {
+                                xmtpApi!!.sendMessage(xmtpmsg, target).whenComplete { s, throwable ->
+                                    Log.d("Message", s)
+                                }
+                                threadItems.add(msg)
+                                setupAdapter(xmtpMessages = threadItems)
+                            }
+                        } catch(t: Throwable) {
+                            t.printStackTrace()
+                            toast("Failed to send transaction.")
+                        }
+
+                    }
+                }
             }
         }
     }
@@ -767,6 +1248,59 @@ class ThreadActivity : SimpleActivity() {
         } catch (e: Exception) {
             showErrorToast(e)
         }
+    }
+
+    private fun createMsgImageFromText(text: String, context: Context, messageId: Long, received: Boolean): Message {
+        val bitmap: Bitmap = Bitmap.createBitmap(1000, 1000, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val textPaint = Paint()
+        textPaint.setTextAlign(Paint.Align.CENTER)
+        textPaint.setColor(Color.WHITE)
+        textPaint.textSize = 120.toFloat()
+
+        val xPos = canvas.width / 2
+        val yPos = (canvas.height / 2 - (textPaint.descent() + textPaint.ascent()) / 2)
+
+        canvas.drawText(text, xPos.toFloat(), yPos, textPaint)
+        val uri = getImageUri(context, bitmap)
+
+        allImageUris.add(uri!!)
+
+        val attachmentArray = ArrayList<Attachment>()
+        attachmentArray.add(
+            Attachment(
+                id = null,
+                messageId = messageId,
+                uriString = uri.toString(),
+                mimetype = "image/png",
+                width = canvas.width,
+                height = canvas.height,
+                filename = "transaction"
+            )
+        )
+        return Message(
+            attachment = MessageAttachment(
+                id = messageId,
+                text = "",
+                attachments = attachmentArray
+            ),
+            body = "",
+            date = Instant.now().epochSecond.toInt(),
+            id = messageId,
+            isMMS = false,
+            participants = participants,
+            read = false,
+            senderName = "Me",
+            senderPhotoUri = "",
+            status = -1,
+            subscriptionId = -1,
+            threadId = threadId,
+            type = if (!received) {
+                2
+            } else {
+                1
+            }
+        )
     }
 
     private fun launchPickPhotoVideoIntent() {
@@ -862,6 +1396,13 @@ class ThreadActivity : SimpleActivity() {
             .into(attachmentView.thread_attachment_preview)
     }
 
+    fun getImageUri(inContext: Context, inImage: Bitmap): Uri? {
+        val bytes = ByteArrayOutputStream()
+        inImage.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+        val path = MediaStore.Images.Media.insertImage(inContext.contentResolver, inImage, "Title", null)
+        return Uri.parse(path)
+    }
+
     private fun removeAttachment(attachmentView: View, originalUri: String) {
         thread_attachments_wrapper.removeView(attachmentView)
         attachmentSelections.remove(originalUri)
@@ -869,6 +1410,16 @@ class ThreadActivity : SimpleActivity() {
             thread_attachments_holder.beGone()
         }
         checkSendMessageAvailability()
+    }
+
+    fun getPathFromURI(uri: Uri?): String? {
+        val projection = arrayOf(MediaStore.Images.Media.DATA)
+        val cursor = contentResolver.query(uri!!, projection, null, null, null) ?: return null
+        val column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+        cursor.moveToFirst()
+        val s = cursor.getString(column_index)
+        cursor.close()
+        return s
     }
 
     private fun saveAttachment(resultData: Intent) {
@@ -937,8 +1488,10 @@ class ThreadActivity : SimpleActivity() {
                     val mimeType = contentResolver.getType(selection.uri) ?: continue
                     message.addMedia(byteArray, mimeType)
                 } catch (e: Exception) {
+                    e.printStackTrace()
                     showErrorToast(e)
                 } catch (e: Error) {
+                    e.printStackTrace()
                     showErrorToast(e.localizedMessage ?: getString(R.string.unknown_error_occurred))
                 }
             }
@@ -948,24 +1501,66 @@ class ThreadActivity : SimpleActivity() {
             val smsSentIntent = Intent(this, SmsStatusSentReceiver::class.java)
             val deliveredIntent = Intent(this, SmsStatusDeliveredReceiver::class.java)
 
-            transaction.setExplicitBroadcastForSentSms(smsSentIntent)
-            transaction.setExplicitBroadcastForDeliveredSms(deliveredIntent)
+            if(isEthereum){
+                //send Message via xmtp
+                val xmtpmsg = message.text //text from variable message
+                //participants. participants.get(0).ethAddress
 
-            refreshedSinceSent = false
-            transaction.sendNewMessage(message)
-            thread_type_message.setText("")
-            attachmentSelections.clear()
-            thread_attachments_holder.beGone()
-            thread_attachments_wrapper.removeAllViews()
+                val target = checkENSDomain(participants.get(0).ethAddress) //"0xefBABdeE59968641DC6E892e30C470c2b40157Cd" //target addresss
 
-            if (!refreshedSinceSent) {
-                refreshMessages()
+                xmtpApi!!.sendMessage(xmtpmsg, target).whenComplete { s, throwable ->
+                    Log.d("Message", s)
+                }
+                thread_type_message.setText("")
+                val message = Message(
+                    attachment = null,
+                    body = xmtpmsg,
+                    date = Instant.now().epochSecond.toInt(),
+                    id = threadItems.size.toLong()+1,
+                    isMMS = false,
+                    participants = participants,
+                    read = false,
+                    senderName = "Me",
+                    senderPhotoUri = "",
+                    status = -1,
+                    subscriptionId = -1,
+                    threadId = threadId,
+                    type = 2
+                )
+                threadItems.add(message)
+                setupAdapter(xmtpMessages = threadItems)
+                if (getSystemService("wallet") != null) {
+                    runOnUiThread {
+                        setupListener(targetEthAddress, false)
+                    }
+                } else if (walletConnectKit.address != null) {
+                    runOnUiThread {
+                        setupListener(targetEthAddress, false)
+                    }
+                }
+            } else {
+                transaction.setExplicitBroadcastForSentSms(smsSentIntent)
+                transaction.setExplicitBroadcastForDeliveredSms(deliveredIntent)
+
+                refreshedSinceSent = false
+                transaction.sendNewMessage(message)
+                thread_type_message.setText("")
+                attachmentSelections.clear()
+                thread_attachments_holder.beGone()
+                thread_attachments_wrapper.removeAllViews()
+
+                if (!refreshedSinceSent) {
+                    refreshMessages()
+                }
             }
         } catch (e: Exception) {
+            e.printStackTrace()
             showErrorToast(e)
         } catch (e: Error) {
+            e.printStackTrace()
             showErrorToast(e.localizedMessage ?: getString(R.string.unknown_error_occurred))
         }
+
     }
 
     // show selected contacts, properly split to new lines when appropriate
@@ -1128,7 +1723,7 @@ class ThreadActivity : SimpleActivity() {
             messagesDB.insertOrIgnore(latestMessage)
         }
 
-        setupAdapter()
+        setupAdapter(ArrayList())
     }
 
     private fun updateMessageType() {
@@ -1136,10 +1731,13 @@ class ThreadActivity : SimpleActivity() {
         val text = thread_type_message.text.toString()
         val isGroupMms = participants.size > 1 && config.sendGroupMessageMMS
         val isLongMmsMessage = getNumPages(settings, text) > settings.sendLongAsMmsAfter && config.sendLongMessageMMS
-        val stringId = if (attachmentSelections.isNotEmpty() || isGroupMms || isLongMmsMessage) {
+        var stringId = if (attachmentSelections.isNotEmpty() || isGroupMms || isLongMmsMessage) {
             R.string.mms
         } else {
             R.string.sms
+        }
+        if (isEthereum) {
+            stringId = R.string.XMTP
         }
         thread_send_message.setText(stringId)
     }

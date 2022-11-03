@@ -423,7 +423,7 @@ fun Context.getThreadParticipants(threadId: Long, contactsMap: HashMap<Int, Simp
     return participants
 }
 
-fun Context.getThreadParticipants(threadId: Long, contactsMap: HashMap<Int, SimpleContact>?, ethAddress: String): ArrayList<SimpleContact> {
+fun Context.getThreadParticipants(threadId: Long, contactsMap: HashMap<Int, SimpleContact>?, ethAddress: String, name: String): ArrayList<SimpleContact> {
     val uri = Uri.parse("${MmsSms.CONTENT_CONVERSATIONS_URI}?simple=true")
     val projection = arrayOf(
         ThreadsColumns.RECIPIENT_IDS
@@ -445,7 +445,7 @@ fun Context.getThreadParticipants(threadId: Long, contactsMap: HashMap<Int, Simp
 
                     val number = getPhoneNumberFromAddressId(addressId)
                     val namePhoto = getNameAndPhotoFromPhoneNumber(number)
-                    val name = namePhoto.name
+                    //val name = namePhoto.name
                     val photoUri = namePhoto.photoUri ?: ""
                     val phoneNumber = PhoneNumber(number, 0, "", number)
 
