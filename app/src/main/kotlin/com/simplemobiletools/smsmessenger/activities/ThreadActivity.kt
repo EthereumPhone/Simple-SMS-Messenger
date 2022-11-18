@@ -24,6 +24,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.ProgressBar
@@ -222,6 +223,8 @@ class ThreadActivity : SimpleActivity() {
                 participants.get(0).ethAddress = checkENSDomain(address)
             }
         }
+
+        showKeyboard(findViewById(R.id.thread_type_message))
         if(isEthereum) {
             targetEthAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
             if (intent.getBooleanExtra("fromNewConvo", false)) {
@@ -233,7 +236,7 @@ class ThreadActivity : SimpleActivity() {
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             progressBar.visibility = View.VISIBLE
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
-                Log.d("First message on XMTP", p0?.get(0)!!)
+                Log.d("Length of the array", p0.size.toString())
                 val output = ArrayList<ThreadItem>()
                 var numberOfChat: Long = 1
                 p0.forEach {
@@ -772,6 +775,7 @@ class ThreadActivity : SimpleActivity() {
             val contact = SimpleContact(number.hashCode(), number.hashCode(), number, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
             addSelectedContact(contact)
         }
+
     }
 
     private fun fetchNextMessages() {
@@ -1529,6 +1533,7 @@ class ThreadActivity : SimpleActivity() {
                 )
                 threadItems.add(message)
                 setupAdapter(xmtpMessages = threadItems)
+
                 if (getSystemService("wallet") != null) {
                     runOnUiThread {
                         setupListener(targetEthAddress, false)

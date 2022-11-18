@@ -2371,8 +2371,10 @@ async function getMessages(target, msg) {
     const conversation = await xmtp.conversations.newConversation(target)
 
     if (WHAT === "getMessages") {
+        console.log("gettingMessages executing")
         output = []
         const messages = await conversation.messages()
+        console.log("got Messages")
         for (var message of messages) {
             var otherMessage = JSON.parse(JSON.stringify(message))
             otherMessage["senderAddress"] = message.senderAddress
@@ -2381,7 +2383,7 @@ async function getMessages(target, msg) {
         }
 
         window.Android.shareMessages(hash, JSON.stringify(output))
-
+        console.log("shared Messages back")
 
     }
     if (WHAT === "sendMessage") {
