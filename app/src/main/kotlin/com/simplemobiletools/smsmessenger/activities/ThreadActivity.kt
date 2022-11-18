@@ -224,7 +224,6 @@ class ThreadActivity : SimpleActivity() {
             }
         }
 
-        showKeyboard(findViewById(R.id.thread_type_message))
         if(isEthereum) {
             targetEthAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
             if (intent.getBooleanExtra("fromNewConvo", false)) {
@@ -238,6 +237,11 @@ class ThreadActivity : SimpleActivity() {
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
                 Log.d("Length of the array", p0.size.toString())
                 val output = ArrayList<ThreadItem>()
+                if(p0.size == 0) {
+                    setupAdapter(xmtpMessages = output)
+                    progressBar.visibility = View.INVISIBLE
+                    return@whenComplete
+                }
                 var numberOfChat: Long = 1
                 p0.forEach {
                     val jsonObject = JSONObject(it)
@@ -1533,6 +1537,9 @@ class ThreadActivity : SimpleActivity() {
                 )
                 threadItems.add(message)
                 setupAdapter(xmtpMessages = threadItems)
+                if(thread_messages_list.adapter != null) {
+                    thread_messages_list.adapter!!.notifyDataSetChanged()
+                }
 
                 if (getSystemService("wallet") != null) {
                     runOnUiThread {
