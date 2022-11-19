@@ -90,9 +90,10 @@ import java.io.OutputStream
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.Instant
+import java.util.concurrent.CompletableFuture
 
 
-internal class SignerImpl(context: Context) : Signer {
+internal class SignerImpl(context: Context, isInit: Boolean = false, initComplete: CompletableFuture<String>? = null) : Signer {
     val cls = Class.forName("android.os.WalletProxy")
     val createSession = cls.declaredMethods[1]
     val getUserDecision = cls.declaredMethods[3]
@@ -102,6 +103,9 @@ internal class SignerImpl(context: Context) : Signer {
     val getAddress = cls.declaredMethods[2]
     val service = context.getSystemService("wallet")
     val session = createSession.invoke(service) as String
+    val isInit = isInit
+    val context: Context = context
+    val initComplete: CompletableFuture<String>? = initComplete
 
     override fun signMessage(msg: String): String {
         val requestID = signMessageSys.invoke(service, session, msg) as String
@@ -114,6 +118,10 @@ internal class SignerImpl(context: Context) : Signer {
                 break;
             }
             Thread.sleep(1000)
+        }
+
+        if (msg.contains("Enable") && isInit && initComplete != null) {
+            initComplete.complete("")
         }
 
         return hasBeenFulfilled.invoke(service, requestID) as String
@@ -240,6 +248,7 @@ class ThreadActivity : SimpleActivity() {
                 if(p0.size == 0) {
                     setupAdapter(xmtpMessages = output)
                     progressBar.visibility = View.INVISIBLE
+                    saveThreadAsEth()
                     return@whenComplete
                 }
                 var numberOfChat: Long = 1
@@ -537,7 +546,7 @@ class ThreadActivity : SimpleActivity() {
         val editor = sharedPreferences.edit()
         val gson = Gson()
         val json = gson.toJson(threadItems)
-        editor.putString(threadId.toString()+"_items", json)
+        editor.putString(targetEthAddress, json)
         // Saving newest message
         if (threadItems.size > 0) {
             editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
@@ -548,7 +557,7 @@ class ThreadActivity : SimpleActivity() {
     private fun loadThreadList() {
         val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
         val gson = Gson()
-        val json = sharedPreferences.getString(threadId.toString()+"_items", "")
+        val json = sharedPreferences.getString(targetEthAddress, "")
         if (json != "") {
             val type = object : TypeToken<ArrayList<Message?>?>() {}.type
             try {

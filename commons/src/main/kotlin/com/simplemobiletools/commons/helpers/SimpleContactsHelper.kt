@@ -28,18 +28,26 @@ import com.simplemobiletools.commons.R
 import com.simplemobiletools.commons.extensions.*
 import com.simplemobiletools.commons.models.PhoneNumber
 import com.simplemobiletools.commons.models.SimpleContact
+import java.util.*
+import kotlin.collections.ArrayList
 
 class SimpleContactsHelper(val context: Context) {
+
+    val random = Random()
+    fun rand(from: Int, to: Int) : Int {
+        return random.nextInt(to - from) + from
+    }
     fun filterAllContacts(names: ArrayList<SimpleContact>, allContacts: ArrayList<SimpleContact>): ArrayList<SimpleContact> {
         names.forEach {
             if (!containsRawId(allContacts, it.rawId)) {
                 if (it.phoneNumbers.size == 0 && it.ethAddress != "0x0"){
+                    val num = "+100000"+rand(0,1000000).toString()
                     it.phoneNumbers.add(
                         PhoneNumber(
-                            value = "+1000000000",
+                            value = num,
                             type = 2,
                             label = "",
-                            normalizedNumber = "+1000000000",
+                            normalizedNumber = num,
                             isPrimary = false
                         ))
                     allContacts.add(it)
