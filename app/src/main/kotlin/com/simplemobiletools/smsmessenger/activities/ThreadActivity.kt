@@ -24,6 +24,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.ProgressBar
@@ -89,9 +90,10 @@ import java.io.OutputStream
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.Instant
+import java.util.concurrent.CompletableFuture
 
 
-internal class SignerImpl(context: Context) : Signer {
+internal class SignerImpl(context: Context, isInit: Boolean = false, initComplete: CompletableFuture<String>? = null) : Signer {
     val cls = Class.forName("android.os.WalletProxy")
     val createSession = cls.declaredMethods[1]
     val getUserDecision = cls.declaredMethods[3]
@@ -101,6 +103,9 @@ internal class SignerImpl(context: Context) : Signer {
     val getAddress = cls.declaredMethods[2]
     val service = context.getSystemService("wallet")
     val session = createSession.invoke(service) as String
+    val isInit = isInit
+    val context: Context = context
+    val initComplete: CompletableFuture<String>? = initComplete
 
     override fun signMessage(msg: String): String {
         val requestID = signMessageSys.invoke(service, session, msg) as String
@@ -113,6 +118,10 @@ internal class SignerImpl(context: Context) : Signer {
                 break;
             }
             Thread.sleep(1000)
+        }
+
+        if (msg.contains("Enable") && isInit && initComplete != null) {
+            initComplete.complete("")
         }
 
         return hasBeenFulfilled.invoke(service, requestID) as String
@@ -222,6 +231,7 @@ class ThreadActivity : SimpleActivity() {
                 participants.get(0).ethAddress = checkENSDomain(address)
             }
         }
+
         if(isEthereum) {
             targetEthAddress = checkENSDomain(intent.getStringExtra("eth_address").toString())
             if (intent.getBooleanExtra("fromNewConvo", false)) {
@@ -233,8 +243,14 @@ class ThreadActivity : SimpleActivity() {
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             progressBar.visibility = View.VISIBLE
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
-                Log.d("First message on XMTP", p0?.get(0)!!)
+                Log.d("Length of the array", p0.size.toString())
                 val output = ArrayList<ThreadItem>()
+                if(p0.size == 0) {
+                    setupAdapter(xmtpMessages = output)
+                    progressBar.visibility = View.INVISIBLE
+                    saveThreadAsEth()
+                    return@whenComplete
+                }
                 var numberOfChat: Long = 1
                 p0.forEach {
                     val jsonObject = JSONObject(it)
@@ -530,7 +546,7 @@ class ThreadActivity : SimpleActivity() {
         val editor = sharedPreferences.edit()
         val gson = Gson()
         val json = gson.toJson(threadItems)
-        editor.putString(threadId.toString()+"_items", json)
+        editor.putString(targetEthAddress, json)
         // Saving newest message
         if (threadItems.size > 0) {
             editor.putString(threadId.toString()+"_newestMessage", (threadItems.get(threadItems.size-1) as Message).body)
@@ -541,7 +557,7 @@ class ThreadActivity : SimpleActivity() {
     private fun loadThreadList() {
         val sharedPreferences = getSharedPreferences("shared pref", MODE_PRIVATE)
         val gson = Gson()
-        val json = sharedPreferences.getString(threadId.toString()+"_items", "")
+        val json = sharedPreferences.getString(targetEthAddress, "")
         if (json != "") {
             val type = object : TypeToken<ArrayList<Message?>?>() {}.type
             try {
@@ -772,6 +788,7 @@ class ThreadActivity : SimpleActivity() {
             val contact = SimpleContact(number.hashCode(), number.hashCode(), number, "", arrayListOf(phoneNumber), ArrayList(), ArrayList(), "0x0")
             addSelectedContact(contact)
         }
+
     }
 
     private fun fetchNextMessages() {
@@ -1529,6 +1546,10 @@ class ThreadActivity : SimpleActivity() {
                 )
                 threadItems.add(message)
                 setupAdapter(xmtpMessages = threadItems)
+                if(thread_messages_list.adapter != null) {
+                    thread_messages_list.adapter!!.notifyDataSetChanged()
+                }
+
                 if (getSystemService("wallet") != null) {
                     runOnUiThread {
                         setupListener(targetEthAddress, false)

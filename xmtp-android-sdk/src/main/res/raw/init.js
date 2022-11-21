@@ -2332,7 +2332,6 @@ function toHexString(byteArray) {
 }
 
 async function init() {
-  console.log("INIT")
   try{
     const getKeyResult = await window.AndroidSigner.getKey()
     if (getKeyResult === "null") {

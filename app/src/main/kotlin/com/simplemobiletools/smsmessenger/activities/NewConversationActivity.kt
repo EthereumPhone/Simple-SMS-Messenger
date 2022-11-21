@@ -3,6 +3,7 @@ package com.simplemobiletools.smsmessenger.activities
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.StrictMode
 import android.util.Log
 import android.view.WindowManager
 import com.google.gson.Gson
@@ -19,6 +20,9 @@ import com.simplemobiletools.smsmessenger.extensions.getThreadId
 import com.simplemobiletools.smsmessenger.helpers.*
 import kotlinx.android.synthetic.main.activity_new_conversation.*
 import kotlinx.android.synthetic.main.item_suggested_contact.view.*
+import org.web3j.crypto.Keys
+import org.web3j.protocol.Web3j
+import org.web3j.protocol.http.HttpService
 import java.net.URLDecoder
 import java.util.*
 import java.util.function.Predicate
@@ -80,7 +84,11 @@ class NewConversationActivity : SimpleActivity() {
         new_conversation_confirm.applyColorFilter(getProperTextColor())
         new_conversation_confirm.setOnClickListener {
             val number = new_conversation_address.value
-            launchThreadActivity(number, number, "0x0")
+            if (number.endsWith(".eth")) {
+                launchThreadActivity("+100000"+rand(0,1000000).toString(), number, checkENSDomain(number))
+            } else {
+                launchThreadActivity(number, number, "0x0")
+            }
         }
 
         no_contacts_placeholder_2.setOnClickListener {
@@ -97,6 +105,25 @@ class NewConversationActivity : SimpleActivity() {
         contacts_letter_fastscroller_thumb.setupWithFastScroller(contacts_letter_fastscroller)
         contacts_letter_fastscroller_thumb?.textColor = properPrimaryColor.getContrastColor()
         contacts_letter_fastscroller_thumb?.thumbColor = properPrimaryColor.getColorStateList()
+    }
+
+    private fun checkENSDomain(input: String): String {
+        if (input.endsWith(".eth")) {
+            val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
+            StrictMode.setThreadPolicy(policy)
+
+            val web3j = Web3j.build(HttpService("https://cloudflare-eth.com/"))
+            val ensResolver = ENSResolver(web3j)
+            return try {
+                val address = Keys.toChecksumAddress(ensResolver.resolve(input))
+                address
+            } catch (e: Exception) {
+                e.printStackTrace()
+                input
+            }
+        } else {
+            return input
+        }
     }
 
     private fun isThirdPartyIntent(): Boolean {
@@ -126,6 +153,10 @@ class NewConversationActivity : SimpleActivity() {
         }
     }
 
+    val random = Random()
+    fun rand(from: Int, to: Int) : Int {
+        return random.nextInt(to - from) + from
+    }
 
 
     private fun setupAdapter(contacts: ArrayList<SimpleContact>) {
@@ -228,8 +259,9 @@ class NewConversationActivity : SimpleActivity() {
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
         val numbers = phoneNumber.split(";").toSet()
         val number = if (numbers.size == 1) phoneNumber else Gson().toJson(numbers)
+        val threadId = getThreadId(numbers)
         Intent(this, ThreadActivity::class.java).apply {
-            putExtra(THREAD_ID, getThreadId(numbers))
+            putExtra(THREAD_ID, threadId)
             putExtra(THREAD_TITLE, name)
             putExtra(THREAD_TEXT, text)
             putExtra(THREAD_NUMBER, number)

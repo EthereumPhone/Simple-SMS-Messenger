@@ -70,7 +70,7 @@ class ContactsAdapter(
             }
 
             findViewById<TextView>(R.id.item_contact_number).apply {
-                if (contact.phoneNumbers.size == 1 && contact.phoneNumbers.get(0).normalizedNumber == "+1000000000") {
+                if (contact.phoneNumbers.size == 1 && contact.phoneNumbers.get(0).normalizedNumber.startsWith("+100000")) {
                     text = contact.ethAddress
                 } else {
                     text = TextUtils.join(", ", contact.phoneNumbers.map { it.normalizedNumber })

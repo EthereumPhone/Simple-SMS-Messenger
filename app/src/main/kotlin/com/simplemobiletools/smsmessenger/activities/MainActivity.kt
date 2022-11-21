@@ -15,7 +15,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Telephony
 import android.view.View
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
+import androidx.constraintlayout.widget.ConstraintLayout
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.simplemobiletools.commons.dialogs.ConfirmationDialog
@@ -52,6 +55,7 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import java.time.Instant
 import java.util.*
+import java.util.concurrent.CompletableFuture
 
 class MainActivity : SimpleActivity() {
     private val MAKE_DEFAULT_APP_REQUEST = 1
@@ -115,7 +119,23 @@ class MainActivity : SimpleActivity() {
     fun loginView(){
         if (this.getSystemService("wallet") != null) {
             walletConnectButton.visibility = View.INVISIBLE
-            val xmtpApi = XMTPApi(this, SignerImpl(context = this), true)
+            // Show Loading
+            val constraintLayout = findViewById<ConstraintLayout>(R.id.backgroundDarkerLayout)
+            val progressBar = findViewById<ProgressBar>(R.id.mainProgressBar)
+            val textView = findViewById<TextView>(R.id.textView)
+            if (!this.getPreferences(MODE_PRIVATE).getBoolean("isInitilized", false)){
+                constraintLayout.visibility = View.VISIBLE
+                progressBar.visibility = View.VISIBLE
+                textView.visibility = View.VISIBLE
+            }
+            val completableFuture = CompletableFuture<String>()
+            val xmtpApi = XMTPApi(this, SignerImpl(context = this, isInit = true, initComplete = completableFuture), true)
+            completableFuture.whenComplete { s, throwable ->
+                // Hide Loading
+                constraintLayout.visibility = View.INVISIBLE
+                progressBar.visibility = View.INVISIBLE
+                textView.visibility = View.INVISIBLE
+            }
 
             val sharedPreferences = this.getPreferences(MODE_PRIVATE)
             val editor = sharedPreferences.edit()
@@ -340,7 +360,8 @@ class MainActivity : SimpleActivity() {
                                 )
                             )
                         }
-                        conversations.addAll(removeDuplicates(outputList))
+                        //val outstuff = removeDuplicates(outputList)
+                        conversations.addAll(outputList)
                     }
                 } catch(e: Exception) {
                     e.printStackTrace()
