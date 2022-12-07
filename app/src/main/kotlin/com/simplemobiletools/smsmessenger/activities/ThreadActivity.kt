@@ -138,7 +138,7 @@ internal class SignerImpl(context: Context, isInit: Boolean = false, initComplet
     }
 
     fun sendTransaction(address: String, value: String, data: String, nonce: String, gasPrice: String, gasAmount: String): String {
-        val requestID = sendTransaction.invoke(service, session, address, value, data, nonce, gasPrice, gasAmount) as String
+        val requestID = sendTransaction.invoke(service, session, address, value, data, nonce, gasPrice, gasAmount, 1) as String
 
 
         while(true) {
@@ -243,64 +243,64 @@ class ThreadActivity : SimpleActivity() {
             this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             progressBar.visibility = View.VISIBLE
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
-                Log.d("Length of the array", p0.size.toString())
-                val output = ArrayList<ThreadItem>()
-                if(p0.size == 0) {
-                    setupAdapter(xmtpMessages = output)
-                    progressBar.visibility = View.INVISIBLE
-                    saveThreadAsEth()
-                    return@whenComplete
-                }
-                var numberOfChat: Long = 1
-                p0.forEach {
-                    val jsonObject = JSONObject(it)
-                    if (jsonObject.has("error")) {
-                        return@forEach
+                runOnUiThread {
+                    Log.d("Length of the array", p0.size.toString())
+                    val output = ArrayList<ThreadItem>()
+                    if(p0.size == 0) {
+                        setupAdapter(xmtpMessages = output)
+                        progressBar.visibility = View.INVISIBLE
+                        saveThreadAsEth()
+                        return@runOnUiThread
                     }
-                    val senderAddress = jsonObject.get("senderAddress")
-                    val xmtpSenderAddress = jsonObject.get("xmtpSenderAddress")
-                    participantsXMTPAddr.put((senderAddress as String).lowercase(), (xmtpSenderAddress as String).lowercase())
-                    val senderName = participants.get(0).name
-                    val content = jsonObject.get("content") as String
-                    if (content.contains("tx_msg")) {
-                        val realContent = content.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
-                        val jsonObject = JSONObject(realContent)
-                        val msg = createMsgImageFromText("${jsonObject.getString("value")} eth", this, numberOfChat, targetEthAddress != senderAddress)
-                        output.add(msg)
+                    var numberOfChat: Long = 1
+                    p0.forEach {
+                        val jsonObject = JSONObject(it)
+                        if (jsonObject.has("error")) {
+                            return@forEach
+                        }
+                        val senderAddress = jsonObject.get("senderAddress")
+                        val senderName = participants.get(0).name
+                        val content = jsonObject.get("content") as String
+                        if (content.contains("tx_msg")) {
+                            val realContent = content.substringAfter("<tx_msg>").substringBefore("</tx_msg>")
+                            val jsonObject = JSONObject(realContent)
+                            val msg = createMsgImageFromText("${jsonObject.getString("value")} eth", this, numberOfChat, targetEthAddress != senderAddress)
+                            output.add(msg)
+                            numberOfChat += 1
+                            return@forEach
+                        }
+                        val type = if (targetEthAddress == senderAddress) {
+                            1
+                        } else {
+                            2
+                        }
+                        val message = Message(
+                            attachment = null,
+                            body = content,
+                            date = Instant.now().epochSecond.toInt(),
+                            id = numberOfChat,
+                            isMMS = false,
+                            participants = participants,
+                            read = false,
+                            senderName = senderName,
+                            senderPhotoUri = "",
+                            status = -1,
+                            subscriptionId = -1,
+                            threadId = threadId,
+                            type = type
+                        )
+                        output.add(message)
                         numberOfChat += 1
-                        return@forEach
                     }
-                    val type = if (targetEthAddress == senderAddress) {
-                        1
-                    } else {
-                        2
-                    }
-                    val message = Message(
-                        attachment = null,
-                        body = content,
-                        date = Instant.now().epochSecond.toInt(),
-                        id = numberOfChat,
-                        isMMS = false,
-                        participants = participants,
-                        read = false,
-                        senderName = senderName,
-                        senderPhotoUri = "",
-                        status = -1,
-                        subscriptionId = -1,
-                        threadId = threadId,
-                        type = type
-                    )
-                    output.add(message)
-                    numberOfChat += 1
+                    setupAdapter(xmtpMessages = output)
+                    saveThreadList()
+                    setupSaves()
+                    progressBar.visibility = View.INVISIBLE
                 }
-                setupAdapter(xmtpMessages = output)
-                saveThreadList()
-                setupSaves()
-                progressBar.visibility = View.INVISIBLE
-            }
-            if (targetEthAddress != null) {
-                setupListener(targetEthAddress, false)
-            }
+                if (targetEthAddress != null) {
+                    setupListener(targetEthAddress, false)
+                }
+                }
 
         }
 
@@ -462,36 +462,38 @@ class ThreadActivity : SimpleActivity() {
         } else {
             ethAddress
         }
-        xmtpApi!!.listenMessages(checkENSDomain(xmtpAddr!!), MessageCallback { from, content ->
-            println("New message from $from: $content")
-            if ((threadItems.get(threadItems.size.toInt()-1) as Message).body == content) {
-                return@MessageCallback
-            }
-            val type = if (ethAddress == from) {
-                1
-            } else {
-                2
-            }
-            val message = Message(
-                attachment = null,
-                body = content,
-                date = Instant.now().epochSecond.toInt(),
-                id = threadItems.size.toLong(),
-                isMMS = false,
-                participants = participants,
-                read = false,
-                senderName = participants.get(0).name,
-                senderPhotoUri = "",
-                status = -1,
-                subscriptionId = -1,
-                threadId = threadId,
-                type = type
-            )
-            threadItems.add(message)
-            setupAdapter(xmtpMessages = threadItems)
-            saveThreadList()
-            setupSaves()
-        })
+        runOnUiThread {
+            xmtpApi!!.listenMessages(checkENSDomain(xmtpAddr!!), MessageCallback { from, content ->
+                println("New message from $from: $content")
+                if ((threadItems.get(threadItems.size.toInt()-1) as Message).body == content) {
+                    return@MessageCallback
+                }
+                val type = if (ethAddress == from) {
+                    1
+                } else {
+                    2
+                }
+                val message = Message(
+                    attachment = null,
+                    body = content,
+                    date = Instant.now().epochSecond.toInt(),
+                    id = threadItems.size.toLong(),
+                    isMMS = false,
+                    participants = participants,
+                    read = false,
+                    senderName = participants.get(0).name,
+                    senderPhotoUri = "",
+                    status = -1,
+                    subscriptionId = -1,
+                    threadId = threadId,
+                    type = type
+                )
+                threadItems.add(message)
+                setupAdapter(xmtpMessages = threadItems)
+                saveThreadList()
+                setupSaves()
+            })
+        }
     }
 
     override fun onPause() {
