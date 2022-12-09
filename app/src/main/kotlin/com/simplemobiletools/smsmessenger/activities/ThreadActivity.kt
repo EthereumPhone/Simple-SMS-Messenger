@@ -128,7 +128,7 @@ internal class SignerImpl(context: Context, isInit: Boolean = false, initComplet
     override fun getAddress(): String {
         val requestID = getAddress.invoke(service, session) as String
 
-        Thread.sleep(200)
+        Thread.sleep(1000)
 
         while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
         val address = hasBeenFulfilled.invoke(service, requestID) as String
