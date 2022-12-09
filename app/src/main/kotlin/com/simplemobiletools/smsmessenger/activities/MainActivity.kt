@@ -438,7 +438,7 @@ class MainActivity : SimpleActivity() {
             putExtra(THREAD_TEXT, text)
             putExtra(THREAD_NUMBER, "")
             putExtra("fromMain", true)
-            putExtra("isEthereum", true)
+            putExtra("isEthereum", ethAddress != "0x0")
             putExtra("eth_address", ethAddress)
 
             if (intent.action == Intent.ACTION_SEND && intent.extras?.containsKey(Intent.EXTRA_STREAM) == true) {
@@ -484,7 +484,7 @@ class MainActivity : SimpleActivity() {
                     } else {
                         launchThreadActivity(
                             name = (it as Conversation).title,
-                            ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", SignerImpl(context = this).address)!!,
+                            ethAddress = sharedPreferences.getString((it as Conversation).threadId.toString()+"_ethAddress", "0x0")!!,
                             threadId = (it as Conversation).threadId
                         )
                     }
