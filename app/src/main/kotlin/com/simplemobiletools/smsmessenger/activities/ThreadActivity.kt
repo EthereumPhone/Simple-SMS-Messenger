@@ -24,7 +24,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.LinearLayout.LayoutParams
 import android.widget.ProgressBar
@@ -88,7 +87,6 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.math.BigDecimal
-import java.math.BigInteger
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 
@@ -130,7 +128,7 @@ internal class SignerImpl(context: Context, isInit: Boolean = false, initComplet
     override fun getAddress(): String {
         val requestID = getAddress.invoke(service, session) as String
 
-        Thread.sleep(1000)
+        Thread.sleep(200)
 
         while(hasBeenFulfilled.invoke(service, requestID) == "notfulfilled") { }
         val address = hasBeenFulfilled.invoke(service, requestID) as String
@@ -220,13 +218,13 @@ class ThreadActivity : SimpleActivity() {
         isEthereum = intent.getBooleanExtra("isEthereum", false)
 
 
-        xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
         // Test: 0x2374eFc48c028C98e259a7bBcba336d6acFF103c
         //xmtpMessages = xmtpGetMessages("0x2374eFc48c028C98e259a7bBcba336d6acFF103c")
 
-        if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
+        if (!isEthereum && this.getSharedPreferences("PREF", MODE_PRIVATE).getBoolean(threadId.toString(), false)){
+            xmtpApi = XMTPApi(this, SignerImpl(context = this), false)
             isEthereum = true
-            val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
+            val address = this.getSharedPreferences("PREF", MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
             if (address != null) {
                 participants.get(0).ethAddress = checkENSDomain(address)
             }
@@ -240,7 +238,7 @@ class ThreadActivity : SimpleActivity() {
             }
 
             val intentNumbers = getPhoneNumbersFromIntent()
-            this.getPreferences(MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
+            this.getSharedPreferences("PREF", MODE_PRIVATE).edit().putString(threadId.toString()+"_phonenum", intentNumbers.get(0)).apply()
             progressBar.visibility = View.VISIBLE
             xmtpApi!!.getMessages(targetEthAddress).whenComplete { p0, p1 ->
                 runOnUiThread {
@@ -300,7 +298,7 @@ class ThreadActivity : SimpleActivity() {
                 if (targetEthAddress != null) {
                     setupListener(targetEthAddress, false)
                 }
-                }
+            }
 
         }
 
@@ -337,9 +335,9 @@ class ThreadActivity : SimpleActivity() {
 
                     isEthereum = participants.size == 1 && checkENSDomain(participants.get(0).ethAddress) != "0x0"
 
-                    if (!isEthereum && this.getPreferences(MODE_PRIVATE).getBoolean(threadId.toString(), false)){
+                    if (!isEthereum && this.getSharedPreferences("PREF", MODE_PRIVATE).getBoolean(threadId.toString(), false)){
                         isEthereum = true
-                        val address = this.getPreferences(MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
+                        val address = this.getSharedPreferences("PREF", MODE_PRIVATE).getString(threadId.toString()+"_address", "0x0")
                         if (address != null) {
                             participants.get(0).ethAddress = address
                         }
@@ -673,7 +671,11 @@ class ThreadActivity : SimpleActivity() {
             try {
                 if (participants.isNotEmpty() && messages.hashCode() == cachedMessagesCode && !hasParticipantWithoutName) {
                     if (!isEthereum){
-                        setupAdapter(ArrayList())
+                        val tempCopy = ArrayList<ThreadItem>()
+                        messages.forEach {
+                            tempCopy.add(it)
+                        }
+                        setupAdapter(tempCopy)
                     }
                     return@ensureBackgroundThread
                 }
@@ -720,7 +722,11 @@ class ThreadActivity : SimpleActivity() {
 
             setupAttachmentSizes()
             if (!isEthereum) {
-                setupAdapter(ArrayList())
+                val tempCopy = ArrayList<ThreadItem>()
+                messages.forEach {
+                    tempCopy.add(it)
+                }
+                setupAdapter(tempCopy)
             }
             runOnUiThread {
                 setupThreadTitle()
@@ -1571,6 +1577,27 @@ class ThreadActivity : SimpleActivity() {
                 attachmentSelections.clear()
                 thread_attachments_holder.beGone()
                 thread_attachments_wrapper.removeAllViews()
+
+                val message = Message(
+                    attachment = null,
+                    body = message.text,
+                    date = Instant.now().epochSecond.toInt(),
+                    id = threadItems.size.toLong()+1,
+                    isMMS = false,
+                    participants = participants,
+                    read = false,
+                    senderName = "Me",
+                    senderPhotoUri = "",
+                    status = -1,
+                    subscriptionId = -1,
+                    threadId = threadId,
+                    type = 2
+                )
+                threadItems.add(message)
+                setupAdapter(xmtpMessages = threadItems)
+                if(thread_messages_list.adapter != null) {
+                    thread_messages_list.adapter!!.notifyDataSetChanged()
+                }
 
                 if (!refreshedSinceSent) {
                     refreshMessages()
