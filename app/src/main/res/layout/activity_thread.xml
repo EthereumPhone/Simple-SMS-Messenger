@@ -266,4 +266,10 @@
         android:layout_marginStart="26dp"
         android:layout_marginTop="593dp"
         android:layout_marginBottom="26dp" />
+
+    <WebView
+        android:id="@+id/thread_webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible"/>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

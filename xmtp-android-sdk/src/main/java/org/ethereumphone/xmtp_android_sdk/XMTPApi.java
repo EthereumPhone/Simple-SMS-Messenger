@@ -29,18 +29,19 @@ import org.json.*;
 
 public class XMTPApi {
 
-    private Context context;
     private WebView wv;
     private Signer signer;
+    private Context context;
     private Map<String, CompletableFuture<ArrayList<String>>> completableFutures;
     private Map<String, CompletableFuture<String>> sentMessages;
     private Map<String, MessageCallback> messageCallbackMap;
     SharedPreferences sharedPreferences;
 
 
-    public XMTPApi(Context con, Signer signer, Boolean initialize) {
-        context = con;
+    public XMTPApi(WebView webView, Signer signer, Boolean initialize, Context con) {
         this.signer = signer;
+        this.context = con;
+        this.wv = webView;
         completableFutures = new HashMap<>();
         sentMessages = new HashMap<>();
         messageCallbackMap = new HashMap<>();
@@ -52,7 +53,6 @@ public class XMTPApi {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            wv = new WebView(context);
             wv.getSettings().setJavaScriptEnabled(true);
             wv.getSettings().setAllowFileAccess(true);
             wv.getSettings().setDomStorageEnabled(true); // Turn on DOM storage
