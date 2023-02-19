@@ -12,6 +12,7 @@
         android:layout_height="wrap_content"
         android:layout_centerHorizontal="true"
         android:textSize="@dimen/normal_text_size"
+        android:textStyle="bold"
         tools:text="13 March, 13:30" />
 
     <ImageView
