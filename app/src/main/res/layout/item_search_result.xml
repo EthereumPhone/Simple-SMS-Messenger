@@ -13,7 +13,8 @@
         android:id="@+id/search_result_image"
         android:layout_width="@dimen/normal_icon_size"
         android:layout_height="@dimen/normal_icon_size"
-        android:layout_marginEnd="@dimen/normal_margin" />
+        android:layout_marginEnd="@dimen/normal_margin"
+        android:background="@drawable/circle" />
 
     <TextView
         android:id="@+id/search_result_title"
@@ -25,6 +26,7 @@
         android:maxLines="1"
         android:paddingEnd="@dimen/activity_margin"
         android:textSize="@dimen/big_text_size"
+        android:textStyle="bold"
         tools:text="John" />
 
     <TextView
@@ -37,7 +39,8 @@
         android:ellipsize="end"
         android:maxLines="1"
         android:paddingEnd="@dimen/activity_margin"
-        android:textSize="@dimen/big_text_size"
+        android:textSize="@dimen/bigger_text_size"
+        android:textStyle="light"
         tools:text="Hey buddy!" />
 
     <TextView
@@ -51,6 +54,7 @@
         android:alpha="0.7"
         android:gravity="center_vertical"
         android:textSize="@dimen/smaller_text_size"
+        android:textStyle="light"
         tools:text="08/02/2021" />
 
 </RelativeLayout>

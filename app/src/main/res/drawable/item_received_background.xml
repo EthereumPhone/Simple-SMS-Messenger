@@ -3,9 +3,10 @@
     android:shape="rectangle">
 
     <corners
-        android:bottomRightRadius="@dimen/normal_margin"
-        android:topLeftRadius="@dimen/normal_margin"
-        android:topRightRadius="@dimen/normal_margin" />
+        android:bottomRightRadius="50dp"
+        android:topLeftRadius="50dp"
+        android:topRightRadius="50dp"
+        android:bottomLeftRadius="50dp"/>
 
     <solid android:color="@color/activated_item_foreground" />
 
