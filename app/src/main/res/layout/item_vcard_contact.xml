@@ -41,6 +41,7 @@
             android:paddingStart="@dimen/medium_margin"
             android:paddingEnd="@dimen/activity_margin"
             android:textSize="@dimen/bigger_text_size"
+            android:textStyle="bold"
             tools:text="John Doe" />
 
         <ImageView
