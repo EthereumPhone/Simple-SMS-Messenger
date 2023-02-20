@@ -1,9 +1,15 @@
 package com.simplemobiletools.smsmessenger2.activities
 
+import android.R.attr.label
 import android.annotation.TargetApi
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import com.simplemobiletools.commons.activities.ManageBlockedNumbersActivity
 import com.simplemobiletools.commons.dialogs.ChangeDateTimeFormatDialog
 import com.simplemobiletools.commons.dialogs.RadioGroupDialog
@@ -14,7 +20,9 @@ import com.simplemobiletools.smsmessenger2.R
 import com.simplemobiletools.smsmessenger2.extensions.config
 import com.simplemobiletools.smsmessenger2.helpers.*
 import kotlinx.android.synthetic.main.activity_settings.*
+import org.ethereumphone.walletsdk.WalletSDK
 import java.util.*
+
 
 class SettingsActivity : SimpleActivity() {
     private var blockedNumbersAtPause = -1
@@ -69,16 +77,14 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun setupPurchaseThankYou() {
-        settings_purchase_thank_you_holder.beGoneIf(isOrWasThankYouInstalled())
-
-        // make sure the corners at ripple fit the stroke rounded corners
-        if (settings_purchase_thank_you_holder.isGone()) {
-            settings_use_english_holder.background = resources.getDrawable(R.drawable.ripple_top_corners, theme)
-            settings_language_holder.background = resources.getDrawable(R.drawable.ripple_top_corners, theme)
-        }
-
         settings_purchase_thank_you_holder.setOnClickListener {
-            launchPurchaseThankYouIntent()
+            val walletSDK = WalletSDK(this)
+            val address = walletSDK.getAddress()
+            // Copy address into clipboard
+            val clipboard: ClipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip: ClipData = ClipData.newPlainText("XMTP Address", address)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(this, "Your XMTP address is copied to clipboard", Toast.LENGTH_LONG).show()
         }
     }
 

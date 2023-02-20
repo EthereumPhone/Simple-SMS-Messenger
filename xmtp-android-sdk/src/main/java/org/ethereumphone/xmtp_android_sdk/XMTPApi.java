@@ -109,7 +109,7 @@ public class XMTPApi {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        message = Base64.getEncoder().encodeToString(message.getBytes());
+        message = Base64.getEncoder().encodeToString(message.getBytes(StandardCharsets.UTF_8));
         StringBuilder output = new StringBuilder();
         output.append("<script type='text/javascript' type='module'>\n");
         output.append(content);
