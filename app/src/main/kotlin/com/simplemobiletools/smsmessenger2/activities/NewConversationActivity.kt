@@ -1,11 +1,16 @@
 package com.simplemobiletools.smsmessenger2.activities
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.StrictMode
 import android.util.Log
 import android.view.WindowManager
+import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.reddit.indicatorfastscroll.FastScrollItemIndicator
 import com.simplemobiletools.commons.dialogs.RadioGroupDialog
@@ -24,11 +29,14 @@ import org.web3j.crypto.Keys
 import org.web3j.protocol.Web3j
 import org.web3j.protocol.http.HttpService
 import java.net.URLDecoder
+import com.google.zxing.integration.android.IntentIntegrator
+import com.google.zxing.integration.android.IntentResult
 import java.util.*
 
 class NewConversationActivity : SimpleActivity() {
     private var allContacts = ArrayList<SimpleContact>()
     private var privateContacts = ArrayList<SimpleContact>()
+    private val REQUEST_CODE_CAMERA = 100
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +50,38 @@ class NewConversationActivity : SimpleActivity() {
         // READ_CONTACTS permission is not mandatory, but without it we won't be able to show any suggestions during typing
         handlePermission(PERMISSION_READ_CONTACTS) {
             initContacts()
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_CODE_CAMERA)
+        }
+
+        imageButton.setOnClickListener {
+            openQRScanner()
+        }
+    }
+
+    private fun openQRScanner() {
+        val integrator = IntentIntegrator(this)
+        integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
+        integrator.setPrompt("Scan a QR code")
+        integrator.setCameraId(0)
+        integrator.setBeepEnabled(false)
+        integrator.initiateScan()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        val result: IntentResult? = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
+        if (result != null) {
+            if (result.contents != null) {
+                // QR code scanned successfully
+                new_conversation_address.setText(result.contents.replace("ethereum:", ""))
+            } else {
+                // QR code scanning cancelled
+                Toast.makeText(this, "Cancelled", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            super.onActivityResult(requestCode, resultCode, data)
         }
     }
 
@@ -85,6 +125,8 @@ class NewConversationActivity : SimpleActivity() {
             val number = new_conversation_address.value
             if (number.endsWith(".eth")) {
                 launchThreadActivity("+100000"+rand(0,1000000).toString(), number, checkENSDomain(number))
+            } else if (number.startsWith("0x")) {
+                launchThreadActivity("+100000"+rand(0,1000000).toString(), number, number)
             } else {
                 launchThreadActivity(number, number, "0x0")
             }

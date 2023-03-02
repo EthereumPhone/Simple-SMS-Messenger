@@ -82,10 +82,14 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.5.1'
     implementation 'com.google.android.material:material:1.4.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.databinding:databinding-runtime:7.1.2'
     kapt "androidx.room:room-compiler:2.4.3"
     implementation "androidx.room:room-runtime:2.4.3"
     annotationProcessor "androidx.room:room-compiler:2.4.3"
     implementation 'com.google.code.gson:gson:2.8.8'
     implementation 'org.web3j:core:4.8.8-android'
     implementation 'com.github.EthereumPhone:WalletSDK:0.0.8'
+    implementation 'com.google.zxing:core:3.4.1'
+    // https://mvnrepository.com/artifact/com.google.zxing/android-integration
+    implementation 'com.journeyapps:zxing-android-embedded:4.1.0'
 }

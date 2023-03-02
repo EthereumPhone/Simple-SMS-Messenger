@@ -16,7 +16,18 @@
             android:layout_height="?attr/actionBarSize"
             android:background="@color/color_primary"
             app:title="@string/new_conversation"
-            app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle" />
+            app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle">
+            <ImageButton
+                android:id="@+id/imageButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:layout_gravity="right"
+                app:srcCompat="@drawable/qr_code_scanner"
+                android:backgroundTint="@color/color_primary"
+                app:tint="@color/white"/>
+        </com.google.android.material.appbar.MaterialToolbar>
+
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -149,6 +160,8 @@
                 android:layout_alignBottom="@+id/contacts_letter_fastscroller"
                 android:layout_marginEnd="@dimen/activity_margin"
                 android:layout_toStartOf="@+id/contacts_letter_fastscroller" />
+
+
 
         </RelativeLayout>
     </RelativeLayout>

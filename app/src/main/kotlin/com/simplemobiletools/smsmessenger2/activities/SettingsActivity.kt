@@ -1,5 +1,6 @@
 package com.simplemobiletools.smsmessenger2.activities
 
+import QRDialog
 import android.R.attr.label
 import android.annotation.TargetApi
 import android.app.Activity
@@ -77,14 +78,22 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun setupPurchaseThankYou() {
+        val walletSDK = WalletSDK(this)
+        val address = walletSDK.getAddress()
         settings_purchase_thank_you_holder.setOnClickListener {
-            val walletSDK = WalletSDK(this)
-            val address = walletSDK.getAddress()
             // Copy address into clipboard
             val clipboard: ClipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clip: ClipData = ClipData.newPlainText("XMTP Address", address)
             clipboard.setPrimaryClip(clip)
             Toast.makeText(this, "Your XMTP address is copied to clipboard", Toast.LENGTH_LONG).show()
+        }
+        settings_reveil_qr_code.setOnClickListener {
+            try{
+                val dialog = QRDialog(this, address)
+                dialog.show()
+            }catch(e: Exception){
+                e.printStackTrace()
+            }
         }
     }
 

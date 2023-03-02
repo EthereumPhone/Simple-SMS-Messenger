@@ -76,6 +76,7 @@
     <string name="faq_2_text">MMS size is limited by carriers, you can try setting a smaller limit in the app settings.</string>
     <string name="show_incoming_xmtp_conversations">Show all incoming XMTP Conversations</string>
     <string name="copy_xmtp_address">Copy XMTP Address</string>
+    <string name="reveil_xmtp_address_as_qr">Reveal XMTP address as QR</string>
     <!--
         Haven't found some strings? There's more at
         https://github.com/SimpleMobileTools/Simple-Commons/tree/master/commons/src/main/res
