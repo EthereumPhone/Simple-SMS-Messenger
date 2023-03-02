@@ -201,7 +201,7 @@ class MainActivity : SimpleActivity() {
         (conversations_list.adapter as? ConversationsAdapter)?.updateDrafts()
         updateTextColors(main_coordinator)
 
-        val properPrimaryColor = getProperPrimaryColor()
+        val properPrimaryColor = getColor(R.color.color_primary_dark)
         no_conversations_placeholder_2.setTextColor(properPrimaryColor)
         no_conversations_placeholder_2.underlineText()
         conversations_fastscroller.updateColors(properPrimaryColor)

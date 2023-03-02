@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="color_primary">#5550F2</color>
-    <color name="color_primary_dark">#3D39B8</color>
+    <color name="color_primary">#1E2730</color>
+    <color name="color_primary_dark">#FFF</color>
     <color name="color_accent">@color/color_primary</color>
+
+    <color name="received_message_color">#24303D</color>
+    <color name="outbound_message_color">#8F7CFF</color>
 
     <color name="pressed_item_foreground">#08000000</color>
     <color name="activated_item_foreground">#44888888</color>
@@ -223,7 +226,7 @@
     <color name="md_grey_500">#9E9E9E</color>
     <color name="md_grey_600">#757575</color>
     <color name="md_grey_700">#616161</color>
-    <color name="md_grey_800">#424242</color>
+    <color name="md_grey_800">#1E2730</color>
     <color name="md_grey_black">#000000</color>
 
     <color name="md_grey_white_dark">#DFDFDF</color>

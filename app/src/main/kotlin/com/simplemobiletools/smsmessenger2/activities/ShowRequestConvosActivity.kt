@@ -195,8 +195,6 @@ class ShowRequestConvosActivity : SimpleActivity() {
 
 
     private fun initMessenger(strings: ArrayList<String>) {
-        checkWhatsNewDialog()
-        storeStateVariables()
         getCachedConversations(strings)
 
         no_conversations_placeholder_2.setOnClickListener {
@@ -268,8 +266,7 @@ class ShowRequestConvosActivity : SimpleActivity() {
         val privateCursor = getMyContactsCursor(false, true)
         ensureBackgroundThread {
             val privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
-            val conversations = getConversations(privateContacts = privateContacts)
-
+            val conversations = ArrayList<Conversation>()
             if(ethConversations != null) {
                 conversations.addAll(ethConversations)
             }

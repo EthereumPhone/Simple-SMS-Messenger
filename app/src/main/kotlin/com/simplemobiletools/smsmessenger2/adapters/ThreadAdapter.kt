@@ -252,7 +252,7 @@ class ThreadAdapter(
             thread_message_body.beVisibleIf(message.body.isNotEmpty())
 
             if (message.isReceivedMessage()) {
-                thread_message_sender_photo.beVisible()
+                thread_message_sender_photo.beGone()
                 thread_message_sender_photo.setOnClickListener {
                     val contact = message.participants.first()
                     context.getContactFromAddress(contact.phoneNumbers.first().normalizedNumber) {
@@ -264,13 +264,27 @@ class ThreadAdapter(
                 thread_message_body.setTextColor(textColor)
                 thread_message_body.setLinkTextColor(context.getProperPrimaryColor())
 
+                if(message.type == 1) {
+                    thread_message_body.setBackgroundResource(R.drawable.item_sent_background)
+                    //thread_message_body.background.applyColorFilter(R.color.received_message_color)
+                } else {
+                    thread_message_body.setBackgroundResource(R.drawable.item_received_background)
+                    //thread_message_body.background.applyColorFilter(R.color.outbound_message_color)
+                }
+
                 if (!activity.isFinishing && !activity.isDestroyed) {
                     SimpleContactsHelper(context).loadContactImage(message.senderPhotoUri, thread_message_sender_photo, message.senderName)
                 }
             } else {
                 thread_message_sender_photo?.beGone()
                 val background = context.getProperPrimaryColor()
-                thread_message_body.background.applyColorFilter(background)
+                if(message.type == 1) {
+                    thread_message_body.setBackgroundResource(R.drawable.item_sent_background)
+                    //thread_message_body.background.applyColorFilter(R.color.received_message_color)
+                } else {
+                    thread_message_body.setBackgroundResource(R.drawable.item_received_background)
+                    //thread_message_body.background.applyColorFilter(R.color.outbound_message_color)
+                }
 
                 val contrastColor = background.getContrastColor()
                 thread_message_body.setTextColor(contrastColor)
